@@ -9,8 +9,59 @@
  
 const uk = require('../locales/uk');
 const ru = require('../locales/ru');
-const { mainMenuKb } = require('../keyboards/mainMenuKb');
-const { canProceed } = require('../utils/throttle');
+const { mainMenuKb }    = require('../keyboards/mainMenuKb');
+const { canProceed }    = require('../utils/throttle');
+const { updateLanguage } = require('../db/userService');
+const { logEvent, ACTIONS } = require('../db/eventService');
+ 
+const COOLDOWN_MS = 8_000;
+ 
+const LOCALES = {
+  '🇺🇦 Українська': uk,
+  '🇷🇺 Русский':    ru,
+};
+ 
+module.exports = async (ctx) => {
+ 
+  if (!canProceed(ctx.from.id, 'lang_select', COOLDOWN_MS)) return;
+ 
+  const locale = LOCALES[ctx.message.text];
+  if (!locale) return;
+ 
+  // Зберігаємо мову і логуємо дію паралельно.
+  // Не чекаємо завершення БД-запитів перед надсиланням відео:
+  // updateLanguage і logEvent — некритичні для UX операції.
+  // Якщо БД тимчасово недоступна — логування впаде тихо (try/catch у logEvent),
+  // але юзер все одно отримає відео і меню.
+  //
+  // ❗ Виняток: якщо бізнес-логіка залежить від результату запиту —
+  //    тоді sequential await обов'язковий.
+  //
+  Promise.all([
+    updateLanguage(ctx.from.id, locale.lang),
+    logEvent(ctx.from.id, ACTIONS.LANG_SELECT, { lang: locale.lang }),
+  ]).catch((err) => {
+    // Окремий catch для паралельних DB-запитів — щоб помилка не "зависла"
+    // як unhandled promise rejection і не впала весь процес.
+    console.error('[messageHandler] помилка запису у БД:', err.message);
+  });
+ 
+  await ctx.sendChatAction('upload_video');
+  await ctx.sendVideo(locale.videoFileId);
+  await ctx.reply(locale.welcomeText);
+  await ctx.reply(locale.menuText, mainMenuKb(locale));
+ 
+};
+
+
+
+// До підключення БД
+
+
+// const uk = require('../locales/uk');
+// const ru = require('../locales/ru');
+// const { mainMenuKb } = require('../keyboards/mainMenuKb');
+// const { canProceed } = require('../utils/throttle');
  
 // ─────────────────────────────────────────────────────────────────────────────
 // КУЛДАУН
@@ -25,7 +76,7 @@ const { canProceed } = require('../utils/throttle');
 // Числовий роздільник 8_000 (ES2021) — лише для читабельності,
 // для Node.js це звичайне число 8000.
 //
-const COOLDOWN_MS = 8_000;
+// const COOLDOWN_MS = 8_000;
  
 // ─────────────────────────────────────────────────────────────────────────────
 // LOOKUP-ТАБЛИЦЯ ЛОКАЛЕЙ
@@ -44,14 +95,14 @@ const COOLDOWN_MS = 8_000;
 // Оголошуємо ПОЗА функцією — об'єкт будується один раз при завантаженні
 // модуля, а не при кожному виклику handler-а.
 //
-const LOCALES = {
-  '🇺🇦 Українська': uk,
-  '🇷🇺 Русский':    ru,
-};
+// const LOCALES = {
+//   '🇺🇦 Українська': uk,
+//   '🇷🇺 Русский':    ru,
+// };
  
 // ─────────────────────────────────────────────────────────────────────────────
  
-module.exports = async (ctx) => {
+// module.exports = async (ctx) => {
  
   // ── Захист від повторних кліків ───────────────────────────────────────────
   //
@@ -62,19 +113,19 @@ module.exports = async (ctx) => {
   // 'lang_select' — ідентифікатор дії: дозволяє мати окремий кулдаун
   // для цього handler-а, незалежно від кулдауну кнопки "Подарунок" у bot.js.
   //
-  if (!canProceed(ctx.from.id, 'lang_select', COOLDOWN_MS)) return;
+  // if (!canProceed(ctx.from.id, 'lang_select', COOLDOWN_MS)) return;
  
   // ctx.message.text — текст повідомлення, яке надіслав користувач.
   // Оскільки handler викликається через bot.hears(), сюди потрапляє
   // лише '🇺🇦 Українська' або '🇷🇺 Русский' — інші тексти bot.hears() відсіює.
   //
-  const locale = LOCALES[ctx.message.text];
+  // const locale = LOCALES[ctx.message.text];
  
   // Guard clause — захист на випадок непередбаченого тексту.
   // bot.hears() теоретично гарантує збіг, але явна перевірка — хороша звичка:
   // захищає від майбутніх рефакторингів (якщо хтось змінить bot.hears без LOCALES).
   //
-  if (!locale) return;
+  // if (!locale) return;
  
   // ── Крок 1: "друкує..." ────────────────────────────────────────────────────
   //
@@ -86,7 +137,7 @@ module.exports = async (ctx) => {
   //               'upload_document', 'find_location' тощо.
   // Статус автоматично зникає через 5 секунд або коли надійде наступне повідомлення.
   //
-  await ctx.sendChatAction('upload_video');
+  // await ctx.sendChatAction('upload_video');
  
   // ── Крок 2: Відео ─────────────────────────────────────────────────────────
   //
@@ -99,7 +150,7 @@ module.exports = async (ctx) => {
   // Другий аргумент (extra) — опціональні параметри, наприклад підпис:
   //   ctx.sendVideo(locale.videoFileId, { caption: 'Опис відео' })
   //
-  await ctx.sendVideo(locale.videoFileId);
+  // await ctx.sendVideo(locale.videoFileId);
  
   // ── Крок 3: Привітальний текст ────────────────────────────────────────────
   //
@@ -109,7 +160,7 @@ module.exports = async (ctx) => {
   // Sequential await вирішує це: кожен наступний await стартує лише
   // після підтвердження попереднього від Telegram API.
   //
-  await ctx.reply(locale.welcomeText);
+  // await ctx.reply(locale.welcomeText);
  
   // ── Крок 4: Inline-меню ───────────────────────────────────────────────────
   //
@@ -120,6 +171,6 @@ module.exports = async (ctx) => {
   // Telegram вимагає, щоб inline keyboard був прикріплений до повідомлення —
   // не можна надіслати клавіатуру "саму по собі", тому locale.menuText обов'язковий.
   //
-  await ctx.reply(locale.menuText, mainMenuKb(locale));
+//   await ctx.reply(locale.menuText, mainMenuKb(locale));
  
-};
+// };

@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// МОДЕЛЬ USER
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// ❗ id — BigInt, а не Int.
+// Telegram ID сучасних акаунтів перевищують ліміт INT4 (2 147 483 647).
+// BigInt (INT8) покриває значення до 9 223 372 036 854 775 807 — з запасом.
+//
+model User {
+  id         BigInt   @id
+
+  firstName  String
+  username   String?
+  language   String   @default("uk")
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @updatedAt
+  events     Event[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// МОДЕЛЬ EVENT
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// userId — теж BigInt: зовнішній ключ має збігатися з типом User.id.
+//
+model Event {
+  id        Int      @id @default(autoincrement())
+  userId    BigInt
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}

@@ -5,10 +5,14 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "db:studio": "prisma studio",
+    "db:push":   "prisma db push"
   },
   "dependencies": {
+    "@prisma/client": "^5.22.0",
     "dotenv": "^16.4.5",
+    "prisma": "^5.22.0",
     "telegraf": "^4.16.3"
   },
   "devDependencies": {

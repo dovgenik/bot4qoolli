@@ -3,6 +3,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
  
 const { languageKb } = require('../keyboards/languageKb');
+const { upsertUser }  = require('../db/userService');
+const { logEvent, ACTIONS } = require('../db/eventService');
  
 // ─────────────────────────────────────────────────────────────────────────────
 // СИГНАТУРА HANDLER-А
@@ -33,6 +35,45 @@ module.exports = async (ctx) => {
   // Текст "Оберіть мову / Выберите язык:" — нейтральний: двомовний,
   // бо ми ще не знаємо, яку мову обере користувач.
   //
-  await ctx.reply('Оберіть мову / Выберите язык:', languageKb);
+  //await ctx.reply('Оберіть мову / Выберите язык:', languageKb);
  
+  //БУЛО
+  // Паралельне збереження у БД і надсилання повідомлення.
+  //
+  // Promise.all() запускає обидва запити одночасно і чекає завершення обох.
+  // Це швидше ніж sequential await: upsertUser і logEvent незалежні,
+  // і немає причин чекати першого щоб розпочати другий.
+  //
+  // ctx.reply() теж йде паралельно — юзер не чекає запису у БД.
+  //
+
+  // await Promise.all([
+  //   upsertUser(ctx.from),
+  //   logEvent(ctx.from.id, ACTIONS.START),
+  //   ctx.reply('Оберіть мову / Выберите язык:', languageKb),
+  // ]);
+ // СТАЛО
+ // ❗ upsertUser — ОБОВ'ЯЗКОВО окремим await, до будь-яких інших операцій.
+  //
+  // Таблиця Event має зовнішній ключ (FK) на User.id.
+  // Якщо запустити upsertUser і logEvent паралельно через Promise.all —
+  // для нового користувача logEvent може вставити Event раніше,
+  // ніж upsertUser встигне створити User. Результат: FK violation.
+  //
+  // Для існуючого юзера паралельність безпечна (User вже є в БД),
+  // але ми не знаємо заздалегідь — новий юзер чи ні.
+  // Тому sequential await — єдиний надійний варіант.
+  //
+  await upsertUser(ctx.from);
+ 
+  // Після того як User гарантовано є в БД —
+  // логування і відповідь можна запустити паралельно:
+  // вони не залежать одне від одного.
+  //
+  await Promise.all([
+    logEvent(ctx.from.id, ACTIONS.START),
+    ctx.reply('Оберіть мову / Выберите язык:', languageKb),
+  ]);
+
+
 };

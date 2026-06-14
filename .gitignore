@@ -8,3 +8,4 @@ node_modules/
 # Логи
 *.log
 npm-debug.log*
+README_PRISMA.md

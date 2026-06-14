@@ -1,5 +1,5 @@
 {
-  "name": "telegram-bot",
+  "name": "bot4qoolli",
   "version": "1.0.0",
   "description": "Telegram bot with language selection and inline menu",
   "main": "src/index.js",

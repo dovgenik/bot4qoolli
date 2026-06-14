@@ -9,3 +9,4 @@ node_modules/
 *.log
 npm-debug.log*
 README_PRISMA.md
+studio.bat

@@ -1,11 +1,42 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // keyboards/mainMenuKb.js — inline-меню з чотирьох кнопок
 // ─────────────────────────────────────────────────────────────────────────────
- 
+ // ─────────────────────────────────────────────────────────────────────────────
+// keyboards/mainMenuKb.js — inline-меню з п'яти кнопок
+// ─────────────────────────────────────────────────────────────────────────────
+
 const { Markup } = require('telegraf');
+const { SITE_URL, CHANNEL_URL, CONSULT_URL } = require('../config/config');
+
+const mainMenuKb = (locale) =>
+  Markup.inlineKeyboard([
+
+    // Кнопка 1: URL — відкриває сайт реєстрації
+    [Markup.button.url(locale.buttons.register, SITE_URL)],
+
+    // Кнопка 2: callback — запускає сцену збору контактів.
+    // 'contacts:uk' або 'contacts:ru' — мова закодована у data,
+    // щоб сцена знала якою мовою спілкуватись без запиту до БД.
+    [Markup.button.callback(locale.buttons.contacts, `contacts:${locale.lang}`)],
+
+    // Кнопки 3–4: URL — зовнішні посилання
+    [Markup.button.url(locale.buttons.channel, CHANNEL_URL)],
+    [Markup.button.url(locale.buttons.consult,  CONSULT_URL)],
+
+    // Кнопка 5: callback — текстова відповідь "Подарунок"
+    [Markup.button.callback(locale.buttons.gift, `gift:${locale.lang}`)],
+
+  ]);
+
+module.exports = { mainMenuKb };
+
+
+
+
+//const { Markup } = require('telegraf');
  
 // URL-адреси беремо з config — клавіатура не повинна знати, де вони зберігаються.
-const { SITE_URL, CHANNEL_URL, CONSULT_URL } = require('../config/config');
+//const { SITE_URL, CHANNEL_URL, CONSULT_URL } = require('../config/config');
  
 // ─────────────────────────────────────────────────────────────────────────────
 // ТИПИ INLINE-КНОПОК
@@ -54,19 +85,19 @@ const { SITE_URL, CHANNEL_URL, CONSULT_URL } = require('../config/config');
 //
 // Порівняйте з languageKb.js — там константа, бо клавіатура незмінна.
 //
-const mainMenuKb = (locale) =>
-  Markup.inlineKeyboard([
+//const mainMenuKb = (locale) =>
+  //Markup.inlineKeyboard([
  
     // Кнопка 1: "Зареєструватися" — відкриває сайт реєстрації
     // Markup.button.url(підпис, посилання)
-    [Markup.button.url(locale.buttons.register, SITE_URL)],
+    //[Markup.button.url(locale.buttons.register, SITE_URL)],
  
     // Кнопка 2: "Тг. канал" — відкриває основний Telegram-канал
     // Посилання формату https://t.me/channel_name Telegram відкриє всередині додатку
-    [Markup.button.url(locale.buttons.channel, CHANNEL_URL)],
+   // [Markup.button.url(locale.buttons.channel, CHANNEL_URL)],
  
     // Кнопка 3: "Консультація" — відкриває канал або бота для консультацій
-    [Markup.button.url(locale.buttons.consult, CONSULT_URL)],
+   // [Markup.button.url(locale.buttons.consult, CONSULT_URL)],
  
     // Кнопка 4: "Подарунок" — єдина callback-кнопка
     //
@@ -81,9 +112,9 @@ const mainMenuKb = (locale) =>
     // ❗ Пам'ятайте про ліміт: data не може перевищувати 64 байти.
     //   'gift:uk' = 7 байт — з великим запасом.
     //
-    [Markup.button.callback(locale.buttons.gift, `gift:${locale.lang}`)],
+    //[Markup.button.callback(locale.buttons.gift, `gift:${locale.lang}`)],
  
-  ]);
+  //]);
  
-module.exports = { mainMenuKb };
+//module.exports = { mainMenuKb };
  

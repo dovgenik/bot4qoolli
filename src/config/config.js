@@ -1,5 +1,46 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // config/config.js — єдина точка конфігурації застосунку
+// ─────────────────────────────────────────────────────────────────────────────
+
+require('dotenv').config();
+
+const REQUIRED_VARS = [
+  'BOT_TOKEN',
+  'SITE_URL',
+  'CHANNEL_URL',
+  'CONSULT_URL',
+  'ADMIN_TELEGRAM_ID', // числовий ID адміна — отримати через @userinfobot
+];
+
+const missingVars = REQUIRED_VARS.filter((key) => !process.env[key]);
+
+if (missingVars.length > 0) {
+  throw new Error(
+    `\n❌ Відсутні обов'язкові змінні середовища:\n` +
+    missingVars.map((key) => `   - ${key}`).join('\n') +
+    `\n\nДодайте їх у файл .env\n`
+  );
+}
+
+module.exports = {
+  BOT_TOKEN:          process.env.BOT_TOKEN,
+  SITE_URL:           process.env.SITE_URL,
+  CHANNEL_URL:        process.env.CHANNEL_URL,
+  CONSULT_URL:        process.env.CONSULT_URL,
+
+  // Числовий Telegram ID адміна для отримання нотифікацій про реєстрації.
+  // Отримати: написати @userinfobot у Telegram → скопіювати поле "Id:".
+  // Зберігаємо як рядок — sendMessage приймає і string, і number.
+  ADMIN_TELEGRAM_ID:  process.env.ADMIN_TELEGRAM_ID,
+
+  NODE_ENV: process.env.NODE_ENV || 'development',
+  IS_PROD:  process.env.NODE_ENV === 'production',
+};
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// config/config.js — єдина точка конфігурації застосунку
 //
 // Навіщо окремий файл, а не просто process.env.BOT_TOKEN скрізь?
 //   1. Якщо змінна перейменується — правите в одному місці, не по всьому коду
@@ -19,7 +60,7 @@
 // (наприклад, виставлена через термінал або Docker), dotenv її НЕ перезапише.
 // Тому безпечно викликати config() і тут, і в index.js — дублювання не зашкодить.
 //
-require('dotenv').config();
+//require('dotenv').config();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ВАЛІДАЦІЯ ОБОВ'ЯЗКОВИХ ЗМІННИХ
@@ -33,53 +74,53 @@ require('dotenv').config();
 // Array.filter() залишає лише ті ключі, для яких process.env[key] — falsy
 // (undefined, null, порожній рядок '').
 //
-const REQUIRED_VARS = ['BOT_TOKEN', 'SITE_URL', 'CHANNEL_URL', 'CONSULT_URL'];
+// const REQUIRED_VARS = ['BOT_TOKEN', 'SITE_URL', 'CHANNEL_URL', 'CONSULT_URL'];
 
-const missingVars = REQUIRED_VARS.filter((key) => !process.env[key]);
+// const missingVars = REQUIRED_VARS.filter((key) => !process.env[key]);
 
-if (missingVars.length > 0) {
-  throw new Error(
-    `\n❌ Відсутні обов'язкові змінні середовища:\n` +
-    missingVars.map((key) => `   - ${key}`).join('\n') +
-    `\n\nДодайте їх у файл .env у корені проєкту.\n` +
-    `Приклад: дивіться .env.example\n`
-  );
-}
+// if (missingVars.length > 0) {
+//   throw new Error(
+//     `\n❌ Відсутні обов'язкові змінні середовища:\n` +
+//     missingVars.map((key) => `   - ${key}`).join('\n') +
+//     `\n\nДодайте їх у файл .env у корені проєкту.\n` +
+//     `Приклад: дивіться .env.example\n`
+//   );
+// }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ЕКСПОРТ КОНФІГУРАЦІЇ
 // ─────────────────────────────────────────────────────────────────────────────
 
-module.exports = {
+//module.exports = {
 
   // Токен бота — отримується у @BotFather командою /newbot або /mybots.
   // Виглядає як: 123456789:AAFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   // НІКОЛИ не комітьте реальний токен у git — лише через .env!
-  BOT_TOKEN: process.env.BOT_TOKEN,
+  //BOT_TOKEN: process.env.BOT_TOKEN,
 
   // URL сайту для кнопки "Зареєструватися"
   // Приклад: https://your-site.com/register
-  SITE_URL: process.env.SITE_URL,
+  //SITE_URL: process.env.SITE_URL,
 
   // Посилання на основний Telegram-канал для кнопки "Тг. канал"
   // Формат: https://t.me/your_channel
-  CHANNEL_URL: process.env.CHANNEL_URL,
+  //CHANNEL_URL: process.env.CHANNEL_URL,
  
   // Посилання на канал/бота для консультацій, кнопка "Консультація"
   // Формат: https://t.me/your_consult_channel або https://t.me/your_consult_bot
-  CONSULT_URL: process.env.CONSULT_URL,
+  //CONSULT_URL: process.env.CONSULT_URL,
 
   // Поточне середовище запуску.
   // 'development' — локальна розробка (детальні логи, polling)
   // 'production'  — бойовий сервер (мінімум логів, webhooks)
   // Значення за замовчуванням — 'development', якщо змінна не задана.
-  NODE_ENV: process.env.NODE_ENV || 'development',
+  //NODE_ENV: process.env.NODE_ENV || 'development',
 
   // Зручний boolean-флаг — щоб не писати process.env.NODE_ENV === 'production' скрізь.
   // Використання: if (config.IS_PROD) { ... }
-  IS_PROD: process.env.NODE_ENV === 'production',
+  //IS_PROD: process.env.NODE_ENV === 'production',
 
-};
+//};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ПРИКЛАД ФАЙЛУ .env (скопіюйте в корінь проєкту і заповніть своїми даними)

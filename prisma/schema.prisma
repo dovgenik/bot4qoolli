@@ -14,9 +14,22 @@ model User {
   username   String?
   language   String   @default("uk")
 
-  // Поля реєстрації — nullable, бо юзер може не проходити сцену
+  // Контакти зі сцени
   phone      String?
   email      String?
+
+  // ── CRM-синхронізація ─────────────────────────────────────────────────────
+  //
+  // crmSynced — чи вдалось успішно створити лід у CRM.
+  //   false = ще не синхронізовано або CRM повернув помилку
+  //   true  = лід створено
+  //
+  // crmLeadId — числовий ID ліда у Uspacy (поле "id" у відповіді CRM).
+  //   Дозволяє у майбутньому відкривати лід напряму або оновлювати його.
+  //   null якщо синхронізація не відбувалась або не вдалась.
+  //
+  crmSynced  Boolean  @default(false)
+  crmLeadId  Int?
 
   createdAt  DateTime @default(now())
   lastSeenAt DateTime @updatedAt

@@ -5,10 +5,11 @@
 const { prisma } = require('./prisma');
 
 const ACTIONS = Object.freeze({
-  START:       'start',
-  LANG_SELECT: 'lang_select',
-  BTN_GIFT:    'btn_gift',
-  CONTACTS:    'contacts_saved', // юзер залишив контакти через сцену
+  START:            'start',
+  LANG_SELECT:      'lang_select',
+  BTN_GIFT:         'btn_gift',
+  CONTACTS:         'contacts_saved',   // хоча б один контакт надано
+  CONTACTS_SKIPPED: 'contacts_skipped', // юзер пропустив і телефон, і email
 });
 
 const logEvent = async (userId, action, payload = null) => {
@@ -34,10 +35,11 @@ const countByAction = async () =>
   });
 
 const getConversionRate = async () => {
-  const [starts, langPicks, contacts] = await Promise.all([
+  const [starts, langPicks, contacts, skipped] = await Promise.all([
     prisma.event.count({ where: { action: ACTIONS.START } }),
     prisma.event.count({ where: { action: ACTIONS.LANG_SELECT } }),
     prisma.event.count({ where: { action: ACTIONS.CONTACTS } }),
+    prisma.event.count({ where: { action: ACTIONS.CONTACTS_SKIPPED } }),
   ]);
 
   const rate = (n) =>
@@ -47,6 +49,7 @@ const getConversionRate = async () => {
     starts,
     langPicks,   toLang:     rate(langPicks),
     contacts,    toContacts: rate(contacts),
+    skipped,     toSkipped:  rate(skipped),
   };
 };
 

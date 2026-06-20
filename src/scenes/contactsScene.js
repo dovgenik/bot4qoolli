@@ -1,22 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// src/scenes/contactsScene.js — сцена збору телефону і email
-//
-// Запускається з bot.js через ctx.scene.enter('contacts') коли юзер
-// натискає callback-кнопку "Залишити контакти".
-//
-// Мова: передається через callback_data ('contacts:uk' / 'contacts:ru')
-// і зберігається у ctx.wizard.state.lang з першого кроку.
+// src/scenes/contactsScene.js — сцена збору контактів з CRM-інтеграцією
 //
 // Flow:
-//   Крок 0 → запит телефону (contactRequest кнопка)
-//   Крок 1 → отримання телефону, запит email (з опцією "Пропустити")
-//   Крок 2 → отримання email, збереження у БД, нотифікація адміна
+//   Крок 0 → перевірки, запит телефону
+//   Крок 1 → отримання телефону (або skip), запит email
+//   Крок 2 → отримання email (або skip), логіка збереження:
+//
+//     ┌─ обидва null ──→ bothSkipped повідомлення, лог CONTACTS_SKIPPED
+//     └─ хоча б один ─→ saveContacts + notifyAdmin + createLead + saveCrmSync
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { Scenes, Markup } = require('telegraf');
-const { getUserById, saveContacts } = require('../db/userService');
-const { logEvent, ACTIONS }         = require('../db/eventService');
-const { ADMIN_TELEGRAM_ID }         = require('../config/config');
+const { Scenes, Markup }                  = require('telegraf');
+const { getUserById, saveContacts,
+        saveCrmSync }                     = require('../db/userService');
+const { logEvent, ACTIONS }              = require('../db/eventService');
+const { createLead }                     = require('../services/crmService');
+const { ADMIN_TELEGRAM_ID }              = require('../config/config');
 
 const uk = require('../locales/uk');
 const ru = require('../locales/ru');
@@ -27,11 +26,9 @@ const ru = require('../locales/ru');
 
 const getLocale = (lang) => lang === 'ru' ? ru : uk;
 
-// Валідація email — базовий regex, відсіює очевидні помилки
 const isValidEmail = (str) =>
   typeof str === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str.trim());
 
-// Reply keyboard для кроку з телефоном
 const phoneKeyboard = (locale) =>
   Markup.keyboard([
     [Markup.button.contactRequest(locale.scene.contacts.sharePhone)],
@@ -39,7 +36,6 @@ const phoneKeyboard = (locale) =>
     [locale.scene.contacts.cancel],
   ]).resize().oneTime();
 
-// Reply keyboard для кроку з email
 const emailKeyboard = (locale) =>
   Markup.keyboard([
     [locale.scene.contacts.skip],
@@ -47,28 +43,37 @@ const emailKeyboard = (locale) =>
   ]).resize().oneTime();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Нотифікація адміна
+// notifyAdmin — надсилає нотифікацію адміну
+//
+// Два режими:
+//   skipped: true  — юзер нічого не надав (коротке повідомлення)
+//   skipped: false — є хоча б один контакт (повне повідомлення)
 // ─────────────────────────────────────────────────────────────────────────────
-//
-// Надсилаємо через ctx.telegram.sendMessage — доступний у будь-якому
-// кроці сцени без імпорту екземпляра бота.
-//
-// Обгортаємо у try/catch: помилка нотифікації не повинна ламати UX.
-// Якщо адмін заблокував бота або ID неправильний — юзер все одно
-// отримає підтвердження, а помилка піде у консоль.
-//
-const notifyAdmin = async (ctx, { phone, email, lang }) => {
+
+const notifyAdmin = async (ctx, { phone, email, lang, skipped = false }) => {
   try {
-    const { first_name, username } = ctx.from;
+    const { first_name, last_name, username } = ctx.from;
     const langLabel = lang === 'uk' ? '🇺🇦 Українська' : '🇷🇺 Русский';
 
-    const text =
-      `🆕 Нова реєстрація контактів\n\n` +
-      `👤 Ім'я: ${first_name}\n` +
-      (username ? `🔗 Username: @${username}\n` : ``) +
-      `🌐 Мова: ${langLabel}\n` +
-      `📱 Телефон: ${phone  ?? '—'}\n` +
-      `📧 Email:   ${email  ?? '—'}`;
+    const fullName = [first_name, last_name].filter(Boolean).join(' ');
+
+    let text;
+
+    if (skipped) {
+      text =
+        `⚠️ Юзер відвідав сцену контактів, але нічого не надав\n\n` +
+        `👤 Ім'я: ${fullName}\n` +
+        (username ? `🔗 @${username}\n` : '') +
+        `🌐 Мова: ${langLabel}`;
+    } else {
+      text =
+        `🆕 Нові контакти з Telegram-бота\n\n` +
+        `👤 Ім'я: ${fullName}\n` +
+        (username ? `🔗 @${username}\n` : '') +
+        `🌐 Мова: ${langLabel}\n` +
+        `📱 Телефон: ${phone ?? '—'}\n` +
+        `📧 Email:   ${email ?? '—'}`;
+    }
 
     await ctx.telegram.sendMessage(ADMIN_TELEGRAM_ID, text);
   } catch (err) {
@@ -84,23 +89,14 @@ const contactsScene = new Scenes.WizardScene(
   'contacts',
 
   // ══════════════════════════════════════════════════════════════════════════
-  // КРОК 0 — Перевірка, ініціалізація, запит телефону
+  // КРОК 0 — Перевірки, запит телефону
   // ══════════════════════════════════════════════════════════════════════════
-  //
-  // Викликається при ctx.scene.enter('contacts').
-  // ctx тут містить оригінальний callback_query від кнопки меню.
-  //
   async (ctx) => {
-    // Мова передана у callback_data: 'contacts:uk' або 'contacts:ru'.
-    // ctx.match встановлюється у bot.action() і передається у сцену
-    // через ctx.scene.enter('contacts', { lang }) — дивіться bot.js.
     const lang   = ctx.scene.state?.lang || 'uk';
     const locale = getLocale(lang);
 
-    // Зберігаємо мову у стані wizard-а — доступна на всіх наступних кроках
     ctx.wizard.state.lang = lang;
 
-    // Перевіряємо чи юзер вже залишав контакти
     const user = await getUserById(ctx.from.id);
     if (user?.phone) {
       await ctx.reply(locale.scene.contacts.alreadyDone);
@@ -112,42 +108,39 @@ const contactsScene = new Scenes.WizardScene(
   },
 
   // ══════════════════════════════════════════════════════════════════════════
-  // КРОК 1 — Отримання телефону, запит email
+  // КРОК 1 — Телефон або пропуск
   // ══════════════════════════════════════════════════════════════════════════
   async (ctx) => {
     const locale = getLocale(ctx.wizard.state.lang);
     const text   = ctx.message?.text;
 
-    // Скасування
     if (text === locale.scene.contacts.cancel) {
       await ctx.reply(locale.scene.contacts.cancelled, Markup.removeKeyboard());
       return ctx.scene.leave();
     }
 
-    // Юзер натиснув "Пропустити" — phone залишається undefined
     if (text === locale.scene.contacts.skip) {
-      ctx.wizard.state.phone = null; // явно null — щоб знати що пропущено
+      // Зберігаємо null і показуємо інший текст переходу до email
+      ctx.wizard.state.phone = null;
+      await ctx.reply(locale.scene.contacts.askEmailAfterSkip, emailKeyboard(locale));
     } else if (ctx.message?.contact) {
-      // Отримали верифікований контакт від Telegram
       ctx.wizard.state.phone = ctx.message.contact.phone_number;
+      await ctx.reply(locale.scene.contacts.askEmail, emailKeyboard(locale));
     } else {
-      // Юзер написав текст замість натискання кнопки
       await ctx.reply(locale.scene.contacts.useButton, phoneKeyboard(locale));
       return; // залишаємось на кроці 1
     }
 
-    await ctx.reply(locale.scene.contacts.askEmail, emailKeyboard(locale));
     return ctx.wizard.next();
   },
 
   // ══════════════════════════════════════════════════════════════════════════
-  // КРОК 2 — Отримання email, збереження, нотифікація адміна
+  // КРОК 2 — Email або пропуск, збереження, CRM
   // ══════════════════════════════════════════════════════════════════════════
   async (ctx) => {
     const locale = getLocale(ctx.wizard.state.lang);
     const text   = ctx.message?.text?.trim();
 
-    // Скасування
     if (text === locale.scene.contacts.cancel) {
       await ctx.reply(locale.scene.contacts.cancelled, Markup.removeKeyboard());
       return ctx.scene.leave();
@@ -156,27 +149,46 @@ const contactsScene = new Scenes.WizardScene(
     let email;
 
     if (text === locale.scene.contacts.skip) {
-      // Юзер пропустив email
       email = null;
     } else if (isValidEmail(text)) {
       email = text;
     } else {
-      // Невірний формат — залишаємось на кроці 2
       await ctx.reply(locale.scene.contacts.invalidEmail, emailKeyboard(locale));
-      return;
+      return; // залишаємось на кроці 2
     }
 
     const { phone, lang } = ctx.wizard.state;
+    const bothSkipped     = phone === null && email === null;
 
-    // Зберігаємо у БД і логуємо подію — паралельно, незалежні операції.
-    // Збереження виконуємо перед нотифікацією — дані мають бути в БД
-    // навіть якщо нотифікація не пройде.
+    if (bothSkipped) {
+      // ── Обидва пропущені ─────────────────────────────────────────────────
+      //
+      // Зберігаємо факт відвідування сцени через подію CONTACTS_SKIPPED.
+      // НЕ викликаємо saveContacts (нічого зберігати) і НЕ надсилаємо в CRM.
+      // Адміна повідомляємо скороченим повідомленням.
+      //
+      await Promise.all([
+        logEvent(ctx.from.id, ACTIONS.CONTACTS_SKIPPED, { lang }),
+        notifyAdmin(ctx, { phone: null, email: null, lang, skipped: true }),
+        ctx.reply(locale.scene.contacts.bothSkipped, Markup.removeKeyboard()),
+      ]);
+
+      return ctx.scene.leave();
+    }
+
+    // ── Є хоча б один контакт ─────────────────────────────────────────────
+
+    const { first_name, last_name } = ctx.from;
+
+    // 1. Зберігаємо контакти у БД — першим, щоб дані були в БД навіть
+    //    якщо наступні кроки (CRM, нотифікація) не пройдуть.
     await saveContacts(ctx.from.id, { phone, email });
 
-    // Запускаємо нотифікацію і підтвердження юзеру паралельно.
-    // logEvent загорнутий у try/catch всередині — не ламає flow.
-    await Promise.all([
-      notifyAdmin(ctx, { phone, email, lang }),
+    // 2. Паралельно: CRM + нотифікація адміна + підтвердження юзеру
+    const [crmLeadId] = await Promise.all([
+      // createLead повертає ID або null — не кидає помилку
+      createLead({ firstName: first_name, lastName: last_name, phone, email, lang }),
+      notifyAdmin(ctx, { phone, email, lang, skipped: false }),
       logEvent(ctx.from.id, ACTIONS.CONTACTS, {
         lang,
         hasPhone: !!phone,
@@ -185,11 +197,17 @@ const contactsScene = new Scenes.WizardScene(
       ctx.reply(locale.scene.contacts.success, Markup.removeKeyboard()),
     ]);
 
+    // 3. Зберігаємо результат CRM-синхронізації.
+    //    Робимо окремо після Promise.all — crmLeadId відомий лише після createLead.
+    //    Помилка тут не критична — обгортаємо у catch.
+    await saveCrmSync(ctx.from.id, crmLeadId).catch((err) =>
+      console.error('[contactsScene] не вдалось зберегти CRM sync:', err.message)
+    );
+
     return ctx.scene.leave();
   }
 );
 
-// Очищаємо стан при виході (і при успіху, і при скасуванні)
 contactsScene.leave((ctx) => { ctx.wizard.state = {}; });
 
 module.exports = { contactsScene };

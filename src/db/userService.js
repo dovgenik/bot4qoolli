@@ -31,12 +31,7 @@ const updateLanguage = async (userId, lang) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// getUserById — повертає запис юзера або null якщо не знайдено.
-//
-// Використовується у contactsScene для:
-//   1. Перевірки чи юзер вже залишав контакти (phone/email не null)
-//   2. Отримання мови (user.language) для вибору локалі сцени
-//
+
 const getUserById = async (userId) => {
   return prisma.user.findUnique({
     where: { id: BigInt(userId) },
@@ -44,29 +39,41 @@ const getUserById = async (userId) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// saveContacts — зберігає телефон і/або email після проходження сцени.
-//
-// Обидва параметри nullable — юзер міг пропустити email.
-// Передаємо лише те, що реально ввів юзер.
-//
+
 const saveContacts = async (userId, { phone, email }) => {
   return prisma.user.update({
     where: { id: BigInt(userId) },
     data: {
-      // Оновлюємо лише якщо значення є.
-      // undefined у Prisma = "не чіпати поле", null = "записати NULL".
-      // Якщо phone = undefined → поле не зміниться в БД.
       ...(phone !== undefined && { phone }),
       ...(email !== undefined && { email }),
     },
   });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// saveCrmSync — зберігає результат синхронізації з CRM
+//
+// Викликається після спроби createLead у crmService:
+//   - якщо CRM повернув ID → crmSynced=true, crmLeadId=ID
+//   - якщо CRM не відповів або помилка → crmSynced=false, crmLeadId=null
+//
+// Загортаємо виклик у try/catch у сцені — помилка запису не ламає flow.
+//
+const saveCrmSync = async (userId, crmLeadId) => {
+  return prisma.user.update({
+    where: { id: BigInt(userId) },
+    data: {
+      crmSynced: crmLeadId !== null,  // true якщо отримали ID
+      crmLeadId: crmLeadId ?? null,
+    },
+  });
+};
+
 // ── Аналітика ─────────────────────────────────────────────────────────────────
 
-const countUsers = async () => prisma.user.count();
+const countUsers       = async () => prisma.user.count();
 
-const countByLanguage = async () =>
+const countByLanguage  = async () =>
   prisma.user.groupBy({
     by:      ['language'],
     _count:  { _all: true },
@@ -78,17 +85,22 @@ const countNewUsers = async (days = 7) => {
   return prisma.user.count({ where: { createdAt: { gte: since } } });
 };
 
-// Скільки юзерів залишили хоча б телефон
 const countWithContacts = async () =>
   prisma.user.count({ where: { phone: { not: null } } });
+
+// Скільки юзерів успішно синхронізовані з CRM
+const countCrmSynced = async () =>
+  prisma.user.count({ where: { crmSynced: true } });
 
 module.exports = {
   upsertUser,
   updateLanguage,
   getUserById,
   saveContacts,
+  saveCrmSync,
   countUsers,
   countByLanguage,
   countNewUsers,
   countWithContacts,
+  countCrmSynced,
 };

@@ -7,35 +7,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// USER
+// ─────────────────────────────────────────────────────────────────────────────
 model User {
   id         BigInt   @id
-
   firstName  String
   username   String?
   language   String   @default("uk")
-
-  // Контакти зі сцени
   phone      String?
   email      String?
-
-  // ── CRM-синхронізація ─────────────────────────────────────────────────────
-  //
-  // crmSynced — чи вдалось успішно створити лід у CRM.
-  //   false = ще не синхронізовано або CRM повернув помилку
-  //   true  = лід створено
-  //
-  // crmLeadId — числовий ID ліда у Uspacy (поле "id" у відповіді CRM).
-  //   Дозволяє у майбутньому відкривати лід напряму або оновлювати його.
-  //   null якщо синхронізація не відбувалась або не вдалась.
-  //
   crmSynced  Boolean  @default(false)
   crmLeadId  Int?
-
   createdAt  DateTime @default(now())
   lastSeenAt DateTime @updatedAt
+
   events     Event[]
+  tags       UserTag[]   // відмітки для фільтрації розсилок
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// EVENT
+// ─────────────────────────────────────────────────────────────────────────────
 model Event {
   id        Int      @id @default(autoincrement())
   userId    BigInt
@@ -47,4 +40,104 @@ model Event {
   @@index([userId])
   @@index([action])
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOT CONTENT — тексти і медіа бота у БД
+//
+// Кожен запис — один контент-блок для конкретної мови.
+// lang + key — унікальна пара (@@unique).
+//
+// Ключі (key):
+//   video_file_id  — Telegram file_id відео
+//   welcome_text   — привітальний текст після відео
+//   menu_text      — підпис над inline-меню
+//   gift_text      — текст подарунка (callback кнопка)
+//   btn_register   — підпис кнопки "Зареєструватися"
+//   btn_contacts   — підпис кнопки "Залишити контакти"
+//   btn_channel    — підпис кнопки "Тг. канал"
+//   btn_consult    — підпис кнопки "Консультація"
+//   btn_gift       — підпис кнопки "Подарунок"
+// ─────────────────────────────────────────────────────────────────────────────
+model BotContent {
+  id        Int      @id @default(autoincrement())
+  lang      String   // 'uk' | 'ru' | 'en' ...
+  key       String   // ідентифікатор контент-блоку
+  value     String   // значення (текст або file_id)
+  updatedAt DateTime @updatedAt
+
+  @@unique([lang, key])
+  @@index([lang])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIG — глобальні налаштування незалежні від мови
+//
+// Ключі:
+//   url_site     — посилання для кнопки "Зареєструватися"
+//   url_channel  — посилання на Telegram-канал
+//   url_consult  — посилання на консультацію
+// ─────────────────────────────────────────────────────────────────────────────
+model Config {
+  key       String   @id   // унікальний ключ — PK
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USER TAG — відмітки на юзерах для фільтрації розсилок
+//
+// Адмін може позначити юзерів тегами: 'vip', 'lead', 'active' тощо.
+// Broadcast.filterTags використовує ці теги для вибору аудиторії.
+// ─────────────────────────────────────────────────────────────────────────────
+model UserTag {
+  id        Int      @id @default(autoincrement())
+  userId    BigInt
+  user      User     @relation(fields: [userId], references: [id])
+  tag       String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, tag])  // один юзер не може мати два однакових теги
+  @@index([tag])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BROADCAST — розсилка
+//
+// Контент (videoFileId, text, buttons) — все опціональне,
+// але хоча б одне поле має бути заповнене.
+//
+// Фільтри аудиторії (всі null/false/empty = надіслати всім):
+//   filterLang        — лише юзери з цією мовою
+//   filterHasContacts — лише юзери що залишили телефон
+//   filterTags        — лише юзери з хоча б одним із цих тегів
+//
+// Статуси: draft → sending → done | error
+// ─────────────────────────────────────────────────────────────────────────────
+model Broadcast {
+  id          Int      @id @default(autoincrement())
+  title       String   // внутрішня назва для адміна, наприклад "Листопадова акція"
+
+  // ── Контент розсилки ───────────────────────────────────────────────────────
+  videoFileId String?  // Telegram file_id або null
+  text        String?  // текст повідомлення або null
+  // Кнопки у форматі JSON: [{"text": "Перейти", "url": "https://..."}]
+  // null = без кнопок
+  buttons     Json?
+
+  // ── Фільтри аудиторії ──────────────────────────────────────────────────────
+  filterLang        String?   // null = всі мови
+  filterHasContacts Boolean   @default(false)
+  filterTags        String[]  // [] = без фільтру по тегах
+
+  // ── Відстеження прогресу ───────────────────────────────────────────────────
+  status      String   @default("draft")  // draft | sending | done | error
+  totalCount  Int      @default(0)
+  sentCount   Int      @default(0)
+  errorCount  Int      @default(0)
+
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
 }

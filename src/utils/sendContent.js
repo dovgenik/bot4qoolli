@@ -5,7 +5,6 @@
 // Виносимо в окремий модуль — одне місце для змін.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { mainMenuKb } = require('../keyboards/mainMenuKb');
 
 // sendContent — надсилає відео → текст → inline меню
 //
@@ -16,11 +15,23 @@ const { mainMenuKb } = require('../keyboards/mainMenuKb');
 // @param {object} ctx    — Telegraf context
 // @param {object} locale — об'єкт локалі (uk або ru)
 //
-const sendContent = async (ctx, locale) => {
+
+// ─────────────────────────────────────────────────────────────────────────────
+// src/utils/sendContent.js — надсилання основного контенту юзеру
+//
+// Сигнатура не змінилась: sendContent(ctx, content)
+// Різниця: тепер content приходить з contentService (БД),
+// а не з locale-файлів напряму.
+// Структура об'єкта однакова — решта коду без змін.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const { mainMenuKb } = require('../keyboards/mainMenuKb');
+
+const sendContent = async (ctx, content) => {
   await ctx.sendChatAction('upload_video');
-  await ctx.sendVideo(locale.videoFileId);
-  await ctx.reply(locale.welcomeText);
-  await ctx.reply(locale.menuText, mainMenuKb(locale));
+  await ctx.sendVideo(content.videoFileId);
+  await ctx.reply(content.welcomeText);
+  await ctx.reply(content.menuText, mainMenuKb(content));
 };
 
 module.exports = { sendContent };

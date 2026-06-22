@@ -4,79 +4,61 @@
 
 const { prisma } = require('./prisma');
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 const upsertUser = async (telegramUser) => {
   const { id, first_name, username } = telegramUser;
-
   return prisma.user.upsert({
     where:  { id: BigInt(id) },
     update: { firstName: first_name, username: username ?? null },
-    create: {
-      id:        BigInt(id),
-      firstName: first_name,
-      username:  username ?? null,
-      language:  'uk',
-    },
+    create: { id: BigInt(id), firstName: first_name, username: username ?? null, language: 'uk' },
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-
-const updateLanguage = async (userId, lang) => {
-  return prisma.user.update({
+const updateLanguage = async (userId, lang) =>
+  prisma.user.update({
     where: { id: BigInt(userId) },
     data:  { language: lang },
   });
-};
+
+const getUserById = async (userId) =>
+  prisma.user.findUnique({ where: { id: BigInt(userId) } });
 
 // ─────────────────────────────────────────────────────────────────────────────
-
-const getUserById = async (userId) => {
-  return prisma.user.findUnique({
-    where: { id: BigInt(userId) },
-  });
-};
-
+// saveContacts — зберігає телефон, email і часовий пояс
+//
+// Всі три поля nullable і зберігаються лише якщо передані (не undefined).
+// undefined у Prisma = "не чіпати поле"
+// null             = "записати NULL"
+//
+// @param {BigInt|number} userId
+// @param {{ phone?: string|null, email?: string|null, timezone?: string|null }}
 // ─────────────────────────────────────────────────────────────────────────────
-
-const saveContacts = async (userId, { phone, email }) => {
+const saveContacts = async (userId, { phone, email, timezone }) => {
   return prisma.user.update({
     where: { id: BigInt(userId) },
     data: {
-      ...(phone !== undefined && { phone }),
-      ...(email !== undefined && { email }),
+      ...(phone    !== undefined && { phone }),
+      ...(email    !== undefined && { email }),
+      ...(timezone !== undefined && { timezone }),
     },
   });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// saveCrmSync — зберігає результат синхронізації з CRM
-//
-// Викликається після спроби createLead у crmService:
-//   - якщо CRM повернув ID → crmSynced=true, crmLeadId=ID
-//   - якщо CRM не відповів або помилка → crmSynced=false, crmLeadId=null
-//
-// Загортаємо виклик у try/catch у сцені — помилка запису не ламає flow.
-//
-const saveCrmSync = async (userId, crmLeadId) => {
-  return prisma.user.update({
+const saveCrmSync = async (userId, crmLeadId) =>
+  prisma.user.update({
     where: { id: BigInt(userId) },
     data: {
-      crmSynced: crmLeadId !== null,  // true якщо отримали ID
+      crmSynced: crmLeadId !== null,
       crmLeadId: crmLeadId ?? null,
     },
   });
-};
 
 // ── Аналітика ─────────────────────────────────────────────────────────────────
 
-const countUsers       = async () => prisma.user.count();
+const countUsers        = async () => prisma.user.count();
 
-const countByLanguage  = async () =>
+const countByLanguage   = async () =>
   prisma.user.groupBy({
-    by:      ['language'],
-    _count:  { _all: true },
+    by: ['language'], _count: { _all: true },
     orderBy: { _count: { language: 'desc' } },
   });
 
@@ -88,19 +70,16 @@ const countNewUsers = async (days = 7) => {
 const countWithContacts = async () =>
   prisma.user.count({ where: { phone: { not: null } } });
 
-// Скільки юзерів успішно синхронізовані з CRM
-const countCrmSynced = async () =>
+const countCrmSynced    = async () =>
   prisma.user.count({ where: { crmSynced: true } });
 
+// Скільки юзерів вказали часовий пояс
+const countWithTimezone = async () =>
+  prisma.user.count({ where: { timezone: { not: null } } });
+
 module.exports = {
-  upsertUser,
-  updateLanguage,
-  getUserById,
-  saveContacts,
-  saveCrmSync,
-  countUsers,
-  countByLanguage,
-  countNewUsers,
-  countWithContacts,
-  countCrmSynced,
+  upsertUser, updateLanguage, getUserById,
+  saveContacts, saveCrmSync,
+  countUsers, countByLanguage, countNewUsers,
+  countWithContacts, countCrmSynced, countWithTimezone,
 };

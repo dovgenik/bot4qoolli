@@ -10,23 +10,38 @@
 //   Крок 3 → timezone (локація / ручний ввід / skip) → збереження → CRM → нотифікація
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { Scenes, Markup }                  = require('telegraf');
+// ─────────────────────────────────────────────────────────────────────────────
+// src/scenes/contactsScene.js — сцена збору контактів і часового поясу
+//
+// Flow:
+//   Крок 0 → перевірки, запит телефону
+//   Крок 1 → телефон або skip, запит email
+//   Крок 2 → email або skip:
+//              обидва null           → bothSkipped → вихід
+//              ask_timezone = false  → зберігаємо і виходимо без кроку 3
+//              ask_timezone = true   → запит timezone (крок 3)
+//   Крок 3 → локація / ручний час / skip → збереження → CRM → нотифікація
+// ─────────────────────────────────────────────────────────────────────────────
+
+const { Scenes, Markup }              = require('telegraf');
 const { getUserById, saveContacts,
-        saveCrmSync }                     = require('../db/userService');
-const { logEvent, ACTIONS }              = require('../db/eventService');
-const { createLead }                     = require('../services/crmService');
-const { ADMIN_TELEGRAM_ID }              = require('../config/config');
+        saveCrmSync }                 = require('../db/userService');
+const { logEvent, ACTIONS }          = require('../db/eventService');
+const { createLead }                 = require('../services/crmService');
+const { getConfig }                  = require('../db/contentService');
+const { ADMIN_TELEGRAM_ID,
+        BUSINESS_TIMEZONE }          = require('../config/config');
 const {
   detectTimezoneFromLocation,
   parseTimeToOffset,
   formatTimezoneForDisplay,
-}                                        = require('../utils/timezone');
+}                                    = require('../utils/timezone');
 
 const uk = require('../locales/uk');
 const ru = require('../locales/ru');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Хелпери клавіатур
+// Хелпери
 // ─────────────────────────────────────────────────────────────────────────────
 
 const getLocale = (lang) => lang === 'ru' ? ru : uk;
@@ -47,9 +62,6 @@ const emailKeyboard = (locale) =>
     [locale.scene.contacts.cancel],
   ]).resize().oneTime();
 
-// Клавіатура кроку timezone:
-// Кнопка геолокації + Пропустити.
-// Юзер також може просто написати час текстом — це теж обробляється.
 const timezoneKeyboard = (locale) =>
   Markup.keyboard([
     [Markup.button.locationRequest(locale.scene.contacts.shareLocation)],
@@ -58,15 +70,30 @@ const timezoneKeyboard = (locale) =>
   ]).resize().oneTime();
 
 // ─────────────────────────────────────────────────────────────────────────────
+// getBusinessTimezone — читає timezone замовника з Config або fallback на .env
+// ─────────────────────────────────────────────────────────────────────────────
+const getBusinessTimezone = async () => {
+  const config = await getConfig();
+  return config.business_timezone || BUSINESS_TIMEZONE;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// isAskTimezoneEnabled — читає флаг з Config
+// ─────────────────────────────────────────────────────────────────────────────
+const isAskTimezoneEnabled = async () => {
+  const config = await getConfig();
+  // Якщо ключ відсутній у БД (до seed) — вмикаємо за замовчуванням
+  return config.ask_timezone !== 'false';
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // notifyAdmin
 // ─────────────────────────────────────────────────────────────────────────────
-
 const notifyAdmin = async (ctx, { phone, email, timezone, lang, skipped = false }) => {
   try {
     const { first_name, last_name, username } = ctx.from;
     const langLabel = lang === 'uk' ? '🇺🇦 Українська' : '🇷🇺 Русский';
     const fullName  = [first_name, last_name].filter(Boolean).join(' ');
-    const tzDisplay = formatTimezoneForDisplay(timezone);
 
     let text;
 
@@ -77,20 +104,60 @@ const notifyAdmin = async (ctx, { phone, email, timezone, lang, skipped = false 
         (username ? `🔗 @${username}\n` : '') +
         `🌐 Мова: ${langLabel}`;
     } else {
+      // Отримуємо timezone замовника для відображення різниці
+      const businessTz = await getBusinessTimezone();
+      const tzDisplay  = formatTimezoneForDisplay(timezone, businessTz);
+
       text =
         `🆕 Нові контакти з Telegram-бота\n\n` +
         `👤 Ім'я: ${fullName}\n` +
         (username ? `🔗 @${username}\n` : '') +
         `🌐 Мова: ${langLabel}\n` +
-        `📱 Телефон: ${phone    ?? '—'}\n` +
-        `📧 Email:   ${email    ?? '—'}\n` +
+        `📱 Телефон: ${phone ?? '—'}\n` +
+        `📧 Email:   ${email ?? '—'}\n` +
         `🕐 Часовий пояс: ${tzDisplay}`;
     }
 
     await ctx.telegram.sendMessage(ADMIN_TELEGRAM_ID, text);
   } catch (err) {
-    console.error('[contactsScene] помилка нотифікації адміна:', err.message);
+    console.error('[contactsScene] помилка нотифікації:', err.message);
   }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// saveAndFinish — фінальне збереження + CRM + нотифікація + підтвердження юзеру
+//
+// Виноситься окремо щоб уникнути дублювання:
+// викликається і з кроку 2 (якщо ask_timezone=false) і з кроку 3.
+// ─────────────────────────────────────────────────────────────────────────────
+const saveAndFinish = async (ctx, timezone) => {
+  const { phone, email, lang } = ctx.wizard.state;
+  const { first_name, last_name } = ctx.from;
+  const locale = getLocale(lang);
+  const businessTz = await getBusinessTimezone();
+
+  await saveContacts(ctx.from.id, { phone, email, timezone });
+
+  const [crmLeadId] = await Promise.all([
+    createLead({
+      firstName: first_name,
+      lastName:  last_name,
+      phone, email, lang, timezone,
+      businessTimezone: businessTz,
+    }),
+    notifyAdmin(ctx, { phone, email, timezone, lang }),
+    logEvent(ctx.from.id, ACTIONS.CONTACTS, {
+      lang,
+      hasPhone:    !!phone,
+      hasEmail:    !!email,
+      hasTimezone: !!timezone,
+    }),
+    ctx.reply(locale.scene.contacts.success, Markup.removeKeyboard()),
+  ]);
+
+  await saveCrmSync(ctx.from.id, crmLeadId).catch((err) =>
+    console.error('[contactsScene] saveCrmSync error:', err.message)
+  );
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -120,7 +187,7 @@ const contactsScene = new Scenes.WizardScene(
   },
 
   // ══════════════════════════════════════════════════════════════════════════
-  // КРОК 1 — Телефон або skip, запит email
+  // КРОК 1 — Телефон або skip
   // ══════════════════════════════════════════════════════════════════════════
   async (ctx) => {
     const locale = getLocale(ctx.wizard.state.lang);
@@ -147,8 +214,6 @@ const contactsScene = new Scenes.WizardScene(
 
   // ══════════════════════════════════════════════════════════════════════════
   // КРОК 2 — Email або skip
-  // Якщо обидва null → bothSkipped
-  // Якщо є хоча б один → запит timezone
   // ══════════════════════════════════════════════════════════════════════════
   async (ctx) => {
     const locale = getLocale(ctx.wizard.state.lang);
@@ -172,7 +237,7 @@ const contactsScene = new Scenes.WizardScene(
 
     const { phone } = ctx.wizard.state;
 
-    // Обидва null — юзер нічого не надав
+    // Обидва null — нічого не надав
     if (phone === null && email === null) {
       await Promise.all([
         logEvent(ctx.from.id, ACTIONS.CONTACTS_SKIPPED, { lang: ctx.wizard.state.lang }),
@@ -182,10 +247,22 @@ const contactsScene = new Scenes.WizardScene(
       return ctx.scene.leave();
     }
 
-    // Є контакт — зберігаємо email і переходимо до кроку timezone
     ctx.wizard.state.email = email;
 
-    // Запитуємо timezone з parse_mode HTML для відображення <code> тегів
+    // ── Перевіряємо флаг ask_timezone ────────────────────────────────────────
+    //
+    // Якщо флаг вимкнений — зберігаємо без timezone і виходимо.
+    // Якщо увімкнений — переходимо до кроку 3.
+    //
+    const askTimezone = await isAskTimezoneEnabled();
+
+    if (!askTimezone) {
+      // Флаг вимкнено — пропускаємо крок timezone
+      await saveAndFinish(ctx, null);
+      return ctx.scene.leave();
+    }
+
+    // Флаг увімкнено — запитуємо timezone
     await ctx.reply(locale.scene.contacts.askTimezone, {
       parse_mode:   'HTML',
       reply_markup: timezoneKeyboard(locale).reply_markup,
@@ -195,7 +272,7 @@ const contactsScene = new Scenes.WizardScene(
   },
 
   // ══════════════════════════════════════════════════════════════════════════
-  // КРОК 3 — Timezone (локація / ручний ввід / skip) → збереження
+  // КРОК 3 — Timezone (локація / ручний ввід / skip)
   // ══════════════════════════════════════════════════════════════════════════
   async (ctx) => {
     const locale = getLocale(ctx.wizard.state.lang);
@@ -206,19 +283,16 @@ const contactsScene = new Scenes.WizardScene(
       return ctx.scene.leave();
     }
 
-    let timezone = undefined; // undefined = не передавати в saveContacts
+    let timezone;
 
     if (text === locale.scene.contacts.skip) {
-      // Юзер пропустив — timezone залишається null у БД
       timezone = null;
 
     } else if (ctx.message?.location) {
-      // Отримали геолокацію → точний IANA timezone через geo-tz
       const { latitude, longitude } = ctx.message.location;
       timezone = detectTimezoneFromLocation(latitude, longitude);
 
       if (!timezone) {
-        // geo-tz не знайшов timezone (дуже рідко) — просимо повторити
         await ctx.reply(locale.scene.contacts.invalidTime, {
           parse_mode:   'HTML',
           reply_markup: timezoneKeyboard(locale).reply_markup,
@@ -227,7 +301,6 @@ const contactsScene = new Scenes.WizardScene(
       }
 
     } else if (text) {
-      // Юзер ввів час вручну → парсимо в UTC offset
       timezone = parseTimeToOffset(text);
 
       if (!timezone) {
@@ -235,11 +308,10 @@ const contactsScene = new Scenes.WizardScene(
           parse_mode:   'HTML',
           reply_markup: timezoneKeyboard(locale).reply_markup,
         });
-        return; // залишаємось на кроці 3
+        return;
       }
 
     } else {
-      // Незрозумілий ввід
       await ctx.reply(locale.scene.contacts.invalidTime, {
         parse_mode:   'HTML',
         reply_markup: timezoneKeyboard(locale).reply_markup,
@@ -247,31 +319,7 @@ const contactsScene = new Scenes.WizardScene(
       return;
     }
 
-    // ── Збереження всіх даних ─────────────────────────────────────────────
-    const { phone, email, lang } = ctx.wizard.state;
-    const { first_name, last_name } = ctx.from;
-
-    // 1. Спочатку зберігаємо у БД
-    await saveContacts(ctx.from.id, { phone, email, timezone });
-
-    // 2. Паралельно: CRM + нотифікація адміна + лог + підтвердження юзеру
-    const [crmLeadId] = await Promise.all([
-      createLead({ firstName: first_name, lastName: last_name, phone, email, lang, timezone }),
-      notifyAdmin(ctx, { phone, email, timezone, lang, skipped: false }),
-      logEvent(ctx.from.id, ACTIONS.CONTACTS, {
-        lang,
-        hasPhone:    !!phone,
-        hasEmail:    !!email,
-        hasTimezone: !!timezone,
-      }),
-      ctx.reply(locale.scene.contacts.success, Markup.removeKeyboard()),
-    ]);
-
-    // 3. Зберігаємо результат CRM
-    await saveCrmSync(ctx.from.id, crmLeadId).catch((err) =>
-      console.error('[contactsScene] saveCrmSync error:', err.message)
-    );
-
+    await saveAndFinish(ctx, timezone);
     return ctx.scene.leave();
   }
 );

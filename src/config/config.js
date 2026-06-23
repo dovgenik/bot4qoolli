@@ -29,13 +29,15 @@ module.exports = {
   CHANNEL_URL:       process.env.CHANNEL_URL,
   CONSULT_URL:       process.env.CONSULT_URL,
   ADMIN_TELEGRAM_ID: process.env.ADMIN_TELEGRAM_ID,
-
-  // URL вебхука CRM до (не включно) шляху /crm/v1/entities/leads.
-  // Формат у .env:
-  //   CRM_WEBHOOK_URL=https://qoolli-academy.uspacy.ua/company/v1/incoming_webhooks/run/ВАШ_КЛЮЧ
-  //
-  // crmService.js додасть /crm/v1/entities/leads самостійно.
   CRM_WEBHOOK_URL:   process.env.CRM_WEBHOOK_URL,
+
+  // IANA-назва часового поясу замовника.
+  // Використовується для обчислення різниці між часом юзера і часом замовника.
+  // Після першого seed — зберігається у Config таблиці і керується через адмінку.
+  // Fallback на env-змінну якщо таблиця ще не наповнена.
+  //
+  // Приклад .env: BUSINESS_TIMEZONE=Europe/Amsterdam
+  BUSINESS_TIMEZONE: process.env.BUSINESS_TIMEZONE || 'Europe/Amsterdam',
 
   NODE_ENV: process.env.NODE_ENV || 'development',
   IS_PROD:  process.env.NODE_ENV === 'production',

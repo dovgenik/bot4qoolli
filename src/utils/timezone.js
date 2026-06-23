@@ -20,9 +20,16 @@
 // @param {number} longitude
 // @returns {string|null} — наприклад 'Europe/Warsaw' або null при помилці
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// src/utils/timezone.js — утиліти для роботи з часовими поясами
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// detectTimezoneFromLocation — координати → IANA timezone
+// ─────────────────────────────────────────────────────────────────────────────
 const detectTimezoneFromLocation = (latitude, longitude) => {
   try {
-    // geo-tz повертає масив можливих timezone (зазвичай один елемент)
     const { find } = require('geo-tz');
     const timezones = find(latitude, longitude);
     return timezones?.[0] ?? null;
@@ -33,19 +40,11 @@ const detectTimezoneFromLocation = (latitude, longitude) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// parseTimeToOffset — рядок часу → UTC offset
-//
-// Юзер вводить свій поточний час ("14:30").
-// Ми знаємо поточний UTC час сервера.
-// Різниця = offset юзера.
-//
-// @param {string} timeStr — "14:30" або "9:05"
-// @returns {string|null} — 'UTC+02:00', 'UTC-05:00' або null якщо невірний формат
+// parseTimeToOffset — "14:30" → "UTC+02:00" відносно поточного UTC серверу
 // ─────────────────────────────────────────────────────────────────────────────
 const parseTimeToOffset = (timeStr) => {
   if (!timeStr) return null;
 
-  // Підтримуємо формати: "14:30", "9:05", "09:05"
   const match = timeStr.trim().match(/^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/);
   if (!match) return null;
 
@@ -56,11 +55,7 @@ const parseTimeToOffset = (timeStr) => {
   const serverUTCMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
   const userTotalMinutes = userHours * 60 + userMinutes;
 
-  // Обчислюємо різницю
   let offsetMinutes = userTotalMinutes - serverUTCMinutes;
-
-  // Обробляємо перехід через північ:
-  // якщо різниця > 12 годин — скоріше за все наступний/попередній день
   if (offsetMinutes > 720)  offsetMinutes -= 1440;
   if (offsetMinutes < -720) offsetMinutes += 1440;
 
@@ -73,65 +68,128 @@ const parseTimeToOffset = (timeStr) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// getCurrentLocalTime — поточний час у заданому часовому поясі
+// getUTCOffsetMinutes — повертає UTC offset у хвилинах для заданого timezone
 //
 // Підтримує обидва формати:
-//   IANA:   'Europe/Warsaw' → через Intl.DateTimeFormat
-//   Offset: 'UTC+02:00'    → вручну через арифметику
+//   IANA:   'Europe/Warsaw'  → через Intl (враховує DST автоматично)
+//   Offset: 'UTC+02:00'     → парсимо вручну
 //
 // @param {string} timezone
-// @returns {string|null} — '14:30' або null при помилці
+// @returns {number} — наприклад 120 для UTC+02:00
+// ─────────────────────────────────────────────────────────────────────────────
+const getUTCOffsetMinutes = (timezone) => {
+  if (!timezone) return 0;
+
+  try {
+    if (timezone.startsWith('UTC')) {
+      // Offset-формат: парсимо вручну
+      const match = timezone.match(/^UTC([+-])(\d{2}):(\d{2})$/);
+      if (!match) return 0;
+      const sign = match[1] === '+' ? 1 : -1;
+      return sign * (parseInt(match[2], 10) * 60 + parseInt(match[3], 10));
+    }
+
+    // IANA-формат: обчислюємо різницю між локальним і UTC часом
+    // toLocaleString повертає час у заданому timezone, new Date парсить як локальний
+    const now     = new Date();
+    const utcStr  = now.toLocaleString('en-US', { timeZone: 'UTC' });
+    const tzStr   = now.toLocaleString('en-US', { timeZone: timezone });
+    const diffMs  = new Date(tzStr) - new Date(utcStr);
+    return Math.round(diffMs / 60000); // мілісекунди → хвилини
+  } catch (err) {
+    console.error('[timezone] getUTCOffsetMinutes error:', err.message);
+    return 0;
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getOffsetDiff — різниця між timezone юзера і timezone замовника
+//
+// Повертає рядок виду '+1 год', '-3 год', '0 год' (без десяткових)
+// або '+1.5 год' якщо різниця нецілочислена (наприклад UTC+05:30 vs UTC+04:00)
+//
+// @param {string|null} userTimezone     — timezone юзера
+// @param {string}      businessTimezone — timezone замовника (з Config або .env)
+// @returns {string|null} — рядок різниці або null якщо timezone юзера невідомий
+// ─────────────────────────────────────────────────────────────────────────────
+const getOffsetDiff = (userTimezone, businessTimezone) => {
+  if (!userTimezone || !businessTimezone) return null;
+
+  try {
+    const userOffset = getUTCOffsetMinutes(userTimezone);
+    const bizOffset  = getUTCOffsetMinutes(businessTimezone);
+    const diffMinutes = userOffset - bizOffset;
+    const diffHours   = diffMinutes / 60;
+
+    // Форматуємо зі знаком
+    const sign     = diffHours > 0 ? '+' : '';
+    const formatted = Number.isInteger(diffHours)
+      ? `${sign}${diffHours} год`
+      : `${sign}${diffHours.toFixed(1)} год`;
+
+    return formatted;
+  } catch (err) {
+    console.error('[timezone] getOffsetDiff error:', err.message);
+    return null;
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getCurrentLocalTime — поточний час у заданому timezone
 // ─────────────────────────────────────────────────────────────────────────────
 const getCurrentLocalTime = (timezone) => {
   if (!timezone) return null;
 
   try {
     if (timezone.startsWith('UTC')) {
-      // Offset-формат: парсимо вручну
       const match = timezone.match(/^UTC([+-])(\d{2}):(\d{2})$/);
       if (!match) return null;
-
       const sign          = match[1] === '+' ? 1 : -1;
       const offsetMinutes = sign * (parseInt(match[2], 10) * 60 + parseInt(match[3], 10));
-
-      const now     = new Date();
-      const localMs = now.getTime() + offsetMinutes * 60 * 1000;
-      const local   = new Date(localMs);
-
+      const local         = new Date(Date.now() + offsetMinutes * 60 * 1000);
       return `${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}`;
-    } else {
-      // IANA-формат: використовуємо вбудований Intl
-      return new Intl.DateTimeFormat('uk-UA', {
-        timeZone: timezone,
-        hour:     '2-digit',
-        minute:   '2-digit',
-        hour12:   false,
-      }).format(new Date());
     }
+
+    return new Intl.DateTimeFormat('uk-UA', {
+      timeZone: timezone,
+      hour:     '2-digit',
+      minute:   '2-digit',
+      hour12:   false,
+    }).format(new Date());
   } catch (err) {
-    console.error('[timezone] formatTime error:', err.message);
+    console.error('[timezone] getCurrentLocalTime error:', err.message);
     return null;
   }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// formatTimezoneForDisplay — форматує timezone для показу у повідомленнях
+// formatTimezoneForDisplay — повний рядок для нотифікації
 //
-// @param {string|null} timezone
-// @returns {string} — 'Europe/Warsaw (~14:30 за місцевим)' або '—'
+// @param {string|null} userTimezone
+// @param {string|null} businessTimezone — якщо передано, додає різницю
+// @returns {string} — 'Europe/Warsaw (~14:30, +1 год від вас)' або '—'
 // ─────────────────────────────────────────────────────────────────────────────
-const formatTimezoneForDisplay = (timezone) => {
-  if (!timezone) return '—';
+const formatTimezoneForDisplay = (userTimezone, businessTimezone = null) => {
+  if (!userTimezone) return '—';
 
-  const localTime = getCurrentLocalTime(timezone);
-  return localTime
-    ? `${timezone} (~${localTime} за місцевим)`
-    : timezone;
+  const localTime = getCurrentLocalTime(userTimezone);
+  const diff      = businessTimezone
+    ? getOffsetDiff(userTimezone, businessTimezone)
+    : null;
+
+  let result = userTimezone;
+  if (localTime) result += ` (~${localTime}`;
+  if (diff)      result += `, ${diff} від вас`;
+  if (localTime) result += ')';
+
+  return result;
 };
 
 module.exports = {
   detectTimezoneFromLocation,
   parseTimeToOffset,
+  getUTCOffsetMinutes,
+  getOffsetDiff,
   getCurrentLocalTime,
   formatTimezoneForDisplay,
 };

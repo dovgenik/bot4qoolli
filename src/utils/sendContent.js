@@ -25,13 +25,22 @@
 // Структура об'єкта однакова — решта коду без змін.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// src/utils/sendContent.js — надсилання основного контенту юзеру
+//
+// Зміна: передаємо ctx.from.id у mainMenuKb для персоналізованих redirect URL.
+// ─────────────────────────────────────────────────────────────────────────────
+
 const { mainMenuKb } = require('../keyboards/mainMenuKb');
 
 const sendContent = async (ctx, content) => {
   await ctx.sendChatAction('upload_video');
   await ctx.sendVideo(content.videoFileId);
   await ctx.reply(content.welcomeText);
-  await ctx.reply(content.menuText, mainMenuKb(content));
+
+  // ctx.from.id — Telegram ID юзера, вбудовується у redirect URL:
+  //   /r/register?l=uk&u=123456789
+  await ctx.reply(content.menuText, mainMenuKb(content, ctx.from.id));
 };
 
 module.exports = { sendContent };

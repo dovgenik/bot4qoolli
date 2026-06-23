@@ -1,18 +1,23 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // index.js — точка входу застосунку
+// Зміна: запускаємо Express redirect-сервер разом з ботом
 // ─────────────────────────────────────────────────────────────────────────────
 
 require('dotenv').config();
 
-const bot = require('./bot');
+const bot              = require('./bot');
+const { startServer }  = require('./server');
+
+// Запускаємо Express redirect-сервер.
+// Він слухає на process.env.PORT (Railway надає автоматично).
+// Бот і сервер працюють в одному Node.js-процесі — окремий сервіс не потрібен.
+startServer();
 
 bot.launch()
   .then(async () => {
     console.log('✅ Бот запущений');
     console.log(`📌 Режим: ${process.env.NODE_ENV || 'development'}`);
 
-    // Реєструємо команди у Telegram — з'являються у меню "/" біля поля вводу.
-    // /language — дозволяє змінити мову юзеру у будь-який момент.
     await bot.telegram.setMyCommands([
       { command: 'start',    description: 'Запустити бота / Запустить бота' },
       { command: 'language', description: 'Змінити мову / Изменить язык' },

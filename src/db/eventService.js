@@ -8,8 +8,12 @@ const ACTIONS = Object.freeze({
   START:            'start',
   LANG_SELECT:      'lang_select',
   BTN_GIFT:         'btn_gift',
-  CONTACTS:         'contacts_saved',   // хоча б один контакт надано
-  CONTACTS_SKIPPED: 'contacts_skipped', // юзер пропустив і телефон, і email
+  CONTACTS:         'contacts_saved',
+  CONTACTS_SKIPPED: 'contacts_skipped',
+
+  // Клік по URL-кнопці через redirect-сервер.
+  // payload: { action: 'register'|'channel'|'consult', lang: 'uk'|'ru' }
+  URL_CLICK:        'url_click',
 });
 
 const logEvent = async (userId, action, payload = null) => {
@@ -19,7 +23,7 @@ const logEvent = async (userId, action, payload = null) => {
     });
   } catch (err) {
     console.error(
-      `[eventService] не вдалося записати подію "${action}" для ${userId}:`,
+      `[eventService] не вдалося записати "${action}" для ${userId}:`,
       err.message
     );
   }
@@ -34,12 +38,26 @@ const countByAction = async () =>
     orderBy: { _count: { action: 'desc' } },
   });
 
+// Кліки по URL-кнопках з розбивкою по action
+const countUrlClicks = async () =>
+  prisma.event.findMany({
+    where:   { action: ACTIONS.URL_CLICK },
+    select:  { payload: true, createdAt: true },
+  }).then((rows) => {
+    const counts = { register: 0, channel: 0, consult: 0 };
+    for (const row of rows) {
+      const action = row.payload?.action;
+      if (action && counts[action] !== undefined) counts[action]++;
+    }
+    return counts;
+  });
+
 const getConversionRate = async () => {
-  const [starts, langPicks, contacts, skipped] = await Promise.all([
+  const [starts, langPicks, contacts, urlClicks] = await Promise.all([
     prisma.event.count({ where: { action: ACTIONS.START } }),
     prisma.event.count({ where: { action: ACTIONS.LANG_SELECT } }),
     prisma.event.count({ where: { action: ACTIONS.CONTACTS } }),
-    prisma.event.count({ where: { action: ACTIONS.CONTACTS_SKIPPED } }),
+    prisma.event.count({ where: { action: ACTIONS.URL_CLICK } }),
   ]);
 
   const rate = (n) =>
@@ -47,9 +65,9 @@ const getConversionRate = async () => {
 
   return {
     starts,
-    langPicks,   toLang:     rate(langPicks),
-    contacts,    toContacts: rate(contacts),
-    skipped,     toSkipped:  rate(skipped),
+    langPicks,  toLang:     rate(langPicks),
+    contacts,   toContacts: rate(contacts),
+    urlClicks,  toClick:    rate(urlClicks),
   };
 };
 
@@ -64,4 +82,8 @@ const getDailyActivity = async (days = 7) => {
   `;
 };
 
-module.exports = { ACTIONS, logEvent, countByAction, getConversionRate, getDailyActivity };
+module.exports = {
+  ACTIONS, logEvent,
+  countByAction, countUrlClicks,
+  getConversionRate, getDailyActivity,
+};

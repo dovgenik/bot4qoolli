@@ -29,8 +29,14 @@ const { SERVER_URL } = require('../config/config');
 // @param {number|BigInt} userId
 // @param {string} directUrl  — резервне пряме посилання
 // ─────────────────────────────────────────────────────────────────────────────
+// const buildUrl = (action, lang, userId, directUrl) => {
+//   if (!SERVER_URL) return directUrl;
+//   return `${SERVER_URL}/r/${action}?l=${lang}&u=${userId}`;
+// };
+
 const buildUrl = (action, lang, userId, directUrl) => {
   if (!SERVER_URL) return directUrl;
+  if (SERVER_URL.includes('localhost') || SERVER_URL.includes('127.0.0.1')) return directUrl;
   return `${SERVER_URL}/r/${action}?l=${lang}&u=${userId}`;
 };
 

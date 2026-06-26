@@ -1,17 +1,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // index.js — точка входу застосунку
-// Зміна: запускаємо Express redirect-сервер разом з ботом
+//
+// Зміна відносно попередньої версії:
+//   startServer(bot) — передаємо екземпляр бота у сервер.
+//   Це потрібно щоб /tz/save міг надсилати повідомлення юзеру та адміну
+//   через bot.telegram.sendMessage() без circular dependency.
 // ─────────────────────────────────────────────────────────────────────────────
 
 require('dotenv').config();
 
-const bot              = require('./bot');
-const { startServer }  = require('./server');
+const bot             = require('./bot');
+const { startServer } = require('./server');
 
-// Запускаємо Express redirect-сервер.
-// Він слухає на process.env.PORT (Railway надає автоматично).
-// Бот і сервер працюють в одному Node.js-процесі — окремий сервіс не потрібен.
-startServer();
+// Передаємо bot у сервер — він буде доступний у /tz/save через closure.
+// startServer реєструє ендпоінти і запускає Express на process.env.PORT.
+startServer(bot);
 
 bot.launch()
   .then(async () => {

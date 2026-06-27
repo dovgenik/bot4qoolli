@@ -65,4 +65,43 @@ const createLead = async ({
   }
 };
 
-module.exports = { createLead };
+// ─────────────────────────────────────────────────────────────────────────────
+// updateLead — оновлює часовий пояс у існуючому ліді CRM
+//
+// Викликається з server.js /tz/save після того як браузер повернув timezone.
+// Не блокує відповідь юзеру — запускається у фоні (без await у caller-і).
+//
+// @param {number} leadId           — ID ліда (user.crmLeadId)
+// @param {{ timezone, businessTimezone }} params
+// @returns {boolean} — true при успіху
+// ─────────────────────────────────────────────────────────────────────────────
+const updateLead = async (leadId, { timezone, businessTimezone }) => {
+  if (!leadId) return false;
+
+  try {
+    const tzDisplay = formatTimezoneForDisplay(timezone, businessTimezone);
+    const comments  =
+      `Користувач залишив контакти із ТГ бота\n` +
+      `Часовий пояс: ${tzDisplay}`;
+
+    const response = await fetch(`${CRM_WEBHOOK_URL}/crm/v1/entities/leads/${leadId}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ comments }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text().catch(() => '');
+      console.error(`[crmService] updateLead ${response.status}:`, err);
+      return false;
+    }
+
+    console.log(`[crmService] ✅ Timezone оновлено для ліда ${leadId}`);
+    return true;
+  } catch (err) {
+    console.error('[crmService] ❌ updateLead error:', err.message);
+    return false;
+  }
+};
+
+module.exports = { createLead, updateLead }; 

@@ -9,6 +9,7 @@ const { saveTimezone, getUserById } = require("./db/userService");
 const { ADMIN_TELEGRAM_ID, BUSINESS_TIMEZONE } = require("./config/config");
 const { formatTimezoneForDisplay } = require("./utils/timezone");
 const { updateLead } = require("./services/crmService");
+const pendingTimezones = require('./utils/pendingTimezones');
 
 const uk = require("./locales/uk");
 const ru = require("./locales/ru");
@@ -241,61 +242,83 @@ app.get("/tz", (req, res) => {
 // ❗ bot передається у startServer(bot) і доступний через closure.
 //
 const setupTzSave = (bot) => {
-  app.get("/tz/save", async (req, res) => {
-    const { tz: timezone, u: userId, l: lang = "uk" } = req.query;
-
+ 
+  app.get('/tz/save', async (req, res) => {
+    const { tz: timezone, u: userId, l: lang = 'uk' } = req.query;
+ 
     if (!userId || !timezone) {
-      return res.status(400).json({ error: "Missing params" });
+      return res.status(400).json({ error: 'Missing params' });
     }
-
+ 
     try {
       // 1. Зберігаємо timezone у БД
       await saveTimezone(userId, timezone);
-
-      // 2. Отримуємо дані юзера для нотифікації
-      const user = await getUserById(userId);
-
-      const businessTz =
-        (await getConfig().catch(() => ({}))).business_timezone ||
-        BUSINESS_TIMEZONE;
-      const tzDisplay = formatTimezoneForDisplay(timezone, businessTz);
-
-      // 5. Оновлюємо timezone у ліді CRM (якщо лід вже створено)
-      //    Не чекаємо — фонова операція, не критична для відповіді юзеру.
-      if (user?.crmLeadId) {
-        updateLead(user.crmLeadId, {
-          timezone,
-          businessTimezone: businessTz,
-        }).catch((err) =>
-          console.error("[server /tz/save] crmUpdate:", err.message),
+ 
+      // 2. Обчислюємо відображення timezone
+      const businessTz = (await getConfig().catch(() => ({}))).business_timezone
+        || BUSINESS_TIMEZONE;
+      const tzDisplay  = formatTimezoneForDisplay(timezone, businessTz);
+ 
+      // 3. Підтвердження юзеру через бота
+      const locale = lang === 'ru' ? ru : uk;
+      await bot.telegram.sendMessage(userId, locale.scene.contacts.tzSuccess)
+        .catch((err) => console.error('[server /tz/save] sendMessage error:', err.message));
+ 
+      // 4. Оновлюємо повідомлення адміну
+      //
+      // Якщо є збережений message_id (юзер визначив timezone в межах TTL і
+      // сервер не перезапускався) — редагуємо існуюче повідомлення.
+      // Замінюємо "визначається..." на реальний timezone прямо в тому ж
+      // повідомленні → жодних вставок від інших юзерів між рядками.
+      //
+      // Якщо message_id відсутній — надсилаємо окреме повідомлення (fallback).
+      //
+      const pending = pendingTimezones.get(userId);
+ 
+      if (pending?.messageId) {
+        // ── Редагуємо існуюче повідомлення ──────────────────────────────
+        const editedText =
+          `🆕 Нові контакти з Telegram-бота\n\n` +
+          `👤 Ім'я: ${pending.fullName}\n` +
+          (pending.username ? `🔗 @${pending.username}\n` : '') +
+          `🌐 Мова: ${pending.langLabel}\n` +
+          `📱 Телефон: ${pending.phone}\n` +
+          `📧 Email:   ${pending.email}\n` +
+          `🕐 Часовий пояс: ${tzDisplay}`;
+ 
+        await bot.telegram.editMessageText(
+          ADMIN_TELEGRAM_ID,
+          pending.messageId,
+          undefined, // inline_message_id — не використовується
+          editedText
+        ).catch((err) =>
+          console.error('[server /tz/save] editMessage error:', err.message)
         );
-      }
-
-      // 3. Надсилаємо підтвердження юзеру через бота
-      const locale = lang === "ru" ? ru : uk;
-      await bot.telegram
-        .sendMessage(userId, locale.scene.contacts.tzSuccess)
-        .catch((err) =>
-          console.error("[server /tz/save] sendMessage error:", err.message),
-        );
-
-      // 4. Надсилаємо оновлення адміну
-      const fullName = [user?.firstName].filter(Boolean).join(" ");
-      await bot.telegram
-        .sendMessage(
+ 
+        pendingTimezones.del(userId);
+ 
+      } else {
+        // ── Fallback: окреме повідомлення ────────────────────────────────
+        // Спрацьовує якщо: сервер перезапускався після надсилання контактів,
+        // або юзер відкрив /tz-посилання через 30+ хвилин.
+        const user     = await getUserById(userId);
+        const fullName = [user?.firstName].filter(Boolean).join(' ');
+ 
+        await bot.telegram.sendMessage(
           ADMIN_TELEGRAM_ID,
           `🕐 Часовий пояс визначено\n\n` +
-            `👤 ${fullName || "Юзер"} (ID: ${userId})\n` +
-            `📍 ${tzDisplay}`,
-        )
-        .catch((err) =>
-          console.error("[server /tz/save] adminNotify error:", err.message),
+          `👤 ${fullName || 'Юзер'} (ID: ${userId})\n` +
+          `📍 ${tzDisplay}`
+        ).catch((err) =>
+          console.error('[server /tz/save] adminNotify error:', err.message)
         );
-
+      }
+ 
       res.json({ ok: true });
+ 
     } catch (err) {
-      console.error("[server /tz/save] error:", err.message);
-      res.status(500).json({ error: "Server error" });
+      console.error('[server /tz/save] error:', err.message);
+      res.status(500).json({ error: 'Server error' });
     }
   });
 };

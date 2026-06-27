@@ -10,6 +10,10 @@
 //              ask_timezone = true   → зберігаємо, надсилаємо success +
 //                                      inline-кнопку з посиланням на /tz
 //                                      → вихід (timezone прийде окремо через браузер)
+//
+// Зміна: notifyAdmin тепер повертає { messageId, ... } — дані для редагування.
+// saveAndFinish зберігає їх у pendingTimezones, щоб /tz/save міг відредагувати
+// повідомлення адміну замість надсилання нового.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { Scenes, Markup }            = require('telegraf');
@@ -22,6 +26,7 @@ const { ADMIN_TELEGRAM_ID,
         BUSINESS_TIMEZONE,
         SERVER_URL }               = require('../config/config');
 const { formatTimezoneForDisplay } = require('../utils/timezone');
+const pendingTimezones             = require('../utils/pendingTimezones');
 
 const uk = require('../locales/uk');
 const ru = require('../locales/ru');
@@ -65,7 +70,13 @@ const isAskTimezoneEnabled = async () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// notifyAdmin — нотифікація про нові контакти (без timezone — вона прийде окремо)
+// notifyAdmin — нотифікація про нові контакти
+//
+// Зміна: тепер повертає об'єкт з message_id і даними повідомлення.
+// Це дозволяє /tz/save відредагувати це повідомлення, замість надсилання
+// нового, коли timezone визначається через браузер юзера.
+//
+// Повертає null для skipped-кейсу або при помилці надсилання.
 // ─────────────────────────────────────────────────────────────────────────────
 const notifyAdmin = async (ctx, { phone, email, lang, skipped = false }) => {
   try {
@@ -92,16 +103,32 @@ const notifyAdmin = async (ctx, { phone, email, lang, skipped = false }) => {
         `🕐 Часовий пояс: визначається...`;
     }
 
-    await ctx.telegram.sendMessage(ADMIN_TELEGRAM_ID, text);
+    const sent = await ctx.telegram.sendMessage(ADMIN_TELEGRAM_ID, text);
+
+    // Для skipped-кейсу timezone не запитується → редагування не потрібне
+    if (skipped) return null;
+
+    // Повертаємо все необхідне для подальшого редагування повідомлення
+    return {
+      messageId: sent.message_id,
+      fullName,
+      username:  username ?? null,
+      langLabel,
+      phone:     phone ?? '—',
+      email:     email ?? '—',
+    };
   } catch (err) {
     console.error('[contactsScene] помилка нотифікації:', err.message);
+    return null;
   }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // saveAndFinish — зберігає контакти, CRM, нотифікація, кнопка timezone
 //
-// Timezone не передається — вона прийде пізніше з браузера юзера.
+// Зміна: зберігаємо результат notifyAdmin у pendingTimezones.
+// Це дозволяє server.js відредагувати повідомлення адміну, коли
+// timezone прийде з браузера — замість надсилання другого повідомлення.
 // ─────────────────────────────────────────────────────────────────────────────
 const saveAndFinish = async (ctx) => {
   const { phone, email, lang } = ctx.wizard.state;
@@ -113,7 +140,8 @@ const saveAndFinish = async (ctx) => {
   await saveContacts(ctx.from.id, { phone, email });
 
   // Паралельно: CRM + нотифікація адміна + лог
-  const [crmLeadId] = await Promise.all([
+  // notifyAdmin тепер повертає { messageId, fullName, ... } або null
+  const [crmLeadId, notifyResult] = await Promise.all([
     createLead({
       firstName: first_name, lastName: last_name,
       phone, email, lang,
@@ -129,17 +157,18 @@ const saveAndFinish = async (ctx) => {
     console.error('[contactsScene] saveCrmSync error:', err.message)
   );
 
+  // Зберігаємо дані повідомлення для редагування коли прийде timezone.
+  // server.js отримає той самий Map (Node кешує require).
+  if (notifyResult?.messageId) {
+    pendingTimezones.set(ctx.from.id, notifyResult);
+  }
+
   // Підтвердження юзеру (прибираємо Reply keyboard)
   await ctx.reply(locale.scene.contacts.success, Markup.removeKeyboard());
 
   // ── Кнопка timezone ─────────────────────────────────────────────────────
-  //
-  // Показуємо лише якщо:
-  //   1. ask_timezone = true у Config
-  //   2. SERVER_URL визначений і не localhost (Telegram не приймає localhost)
-  //
-  const askTz     = await isAskTimezoneEnabled();
-  const isPublic  = SERVER_URL && !SERVER_URL.includes('localhost');
+  const askTz    = await isAskTimezoneEnabled();
+  const isPublic = SERVER_URL && !SERVER_URL.includes('localhost');
 
   if (askTz && isPublic) {
     const tzUrl = `${SERVER_URL}/tz?u=${ctx.from.id}&l=${lang}`;

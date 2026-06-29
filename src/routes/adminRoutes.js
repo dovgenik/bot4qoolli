@@ -32,7 +32,33 @@ const serializeBigInt = (obj) => {
   );
 };
 
+// Рекурсивне очищення рядків від битих/одиночних Unicode-сурогатів (toWellFormed)
+const sanitizeStrings = (val) => {
+  if (typeof val === 'string') {
+    return val.toWellFormed();
+  }
+  if (Array.isArray(val)) {
+    return val.map(sanitizeStrings);
+  }
+  if (val !== null && typeof val === 'object') {
+    const res = {};
+    for (const [key, kVal] of Object.entries(val)) {
+      res[key] = sanitizeStrings(kVal);
+    }
+    return res;
+  }
+  return val;
+};
+
 const adminRouterSetup = (bot) => {
+  // Middleware для автоматичного очищення вхідних рядків від битих сурогатів
+  router.use((req, res, next) => {
+    if (req.body) {
+      req.body = sanitizeStrings(req.body);
+    }
+    next();
+  });
+
   // ── GET /api/admin/dashboard — статистика та аналітика ─────────────────────
   router.get('/dashboard', async (req, res) => {
     try {

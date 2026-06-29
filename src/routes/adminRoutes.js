@@ -225,6 +225,87 @@ const adminRouterSetup = (bot) => {
     }
   });
 
+  // ── PUT /api/admin/broadcasts/:id — редагування розсилки ───────────────────
+  router.put('/broadcasts/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'Некоректний ID' });
+
+      const broadcast = await prisma.broadcast.findUnique({
+        where: { id },
+      });
+
+      if (!broadcast) {
+        return res.status(404).json({ error: 'Розсилку не знайдено' });
+      }
+
+      if (broadcast.status !== 'draft') {
+        return res.status(400).json({ error: 'Редагувати можна лише чернетки' });
+      }
+
+      const {
+        title,
+        videoFileId,
+        text,
+        buttons,
+        filterLang,
+        filterHasContacts,
+        filterTags,
+      } = req.body;
+
+      if (!title) {
+        return res.status(400).json({ error: 'Назва розсилки обов’язкова' });
+      }
+
+      const updatedBroadcast = await prisma.broadcast.update({
+        where: { id },
+        data: {
+          title,
+          videoFileId: videoFileId || null,
+          text: text || null,
+          buttons: buttons || null,
+          filterLang: filterLang || null,
+          filterHasContacts: filterHasContacts === true || filterHasContacts === 'true',
+          filterTags: Array.isArray(filterTags) ? filterTags : [],
+        },
+      });
+
+      res.json(serializeBigInt(updatedBroadcast));
+    } catch (err) {
+      console.error('[adminRoutes /broadcasts/:id PUT] Помилка:', err.message);
+      res.status(500).json({ error: 'Внутрішня помилка сервера' });
+    }
+  });
+
+  // ── DELETE /api/admin/broadcasts/:id — видалення розсилки ──────────────────
+  router.delete('/broadcasts/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'Некоректний ID' });
+
+      const broadcast = await prisma.broadcast.findUnique({
+        where: { id },
+      });
+
+      if (!broadcast) {
+        return res.status(404).json({ error: 'Розсилку не знайдено' });
+      }
+
+      if (broadcast.status === 'sending') {
+        return res.status(400).json({ error: 'Не можна видалити розсилку, яка надсилається' });
+      }
+
+      await prisma.broadcast.delete({
+        where: { id },
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[adminRoutes /broadcasts/:id DELETE] Помилка:', err.message);
+      res.status(500).json({ error: 'Внутрішня помилка сервера' });
+    }
+  });
+
   // ── POST /api/admin/broadcasts/:id/start — запуск розсилки ──────────────────
   router.post('/broadcasts/:id/start', async (req, res) => {
     try {

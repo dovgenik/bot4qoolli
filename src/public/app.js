@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Модалка розсилок
   const modal = document.getElementById('broadcast-modal');
+  const modalTitle = document.getElementById('modal-title');
+  const modalSubmitBtn = document.getElementById('modal-submit-btn');
   const newBroadcastBtn = document.getElementById('new-broadcast-btn');
   const closeModalBtn = document.getElementById('close-modal-btn');
   const cancelModalBtn = document.getElementById('cancel-modal-btn');
@@ -34,6 +36,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentTab = 'dashboard';
   let activityChart = null;
   let allEvents = [];
+  let editingBroadcastId = null;
+  let currentBroadcasts = [];
 
   // Toast notifications
   const showToast = (message, type = 'success') => {
@@ -422,6 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/admin/broadcasts');
       if (!res.ok) throw new Error('Помилка сервера при отриманні розсилок');
       const broadcasts = await res.json();
+      currentBroadcasts = broadcasts;
 
       const tbody = document.getElementById('broadcasts-table-body');
       tbody.innerHTML = '';
@@ -443,11 +448,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Кнопки дій відповідно до статусу
         let actions = '';
         if (bc.status === 'draft') {
-          actions = `<button class="primary-btn btn-sm run-broadcast-btn" data-id="${bc.id}">🚀 Запустити</button>`;
+          actions = `
+            <button class="primary-btn btn-sm run-broadcast-btn" data-id="${bc.id}">🚀 Запустити</button>
+            <button class="secondary-btn btn-sm edit-broadcast-btn" data-id="${bc.id}">✏️ Редагувати</button>
+            <button class="secondary-btn btn-sm danger-btn delete-broadcast-btn" data-id="${bc.id}">❌ Видалити</button>
+          `;
         } else if (bc.status === 'sending') {
           actions = `<button class="secondary-btn btn-sm danger-btn run-broadcast-btn" data-id="${bc.id}" data-action="cancel">⏹ Зупинити</button>`;
         } else {
-          actions = `<span class="placeholder-text">Завершено</span>`;
+          actions = `<button class="secondary-btn btn-sm danger-btn delete-broadcast-btn" data-id="${bc.id}">❌ Видалити</button>`;
         }
 
         const statusLabel = bc.status === 'draft' ? 'Чернетка' 
@@ -479,6 +488,77 @@ document.addEventListener('DOMContentLoaded', () => {
           } else {
             if (!confirm(`Зупинити активну розсилку #${id}?`)) return;
             triggerBroadcastAction(id, 'cancel');
+          }
+        });
+      });
+
+      // Реєструємо кліки на кнопки редагування
+      document.querySelectorAll('.edit-broadcast-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = parseInt(e.target.dataset.id, 10);
+          const bc = currentBroadcasts.find(item => item.id === id);
+          if (!bc) return;
+
+          editingBroadcastId = bc.id;
+          modalTitle.textContent = `Редагування розсилки #${bc.id}`;
+          modalSubmitBtn.textContent = '💾 Зберегти зміни';
+
+          // Заповнюємо поля
+          document.getElementById('bc-title').value = bc.title || '';
+          document.getElementById('bc-videoFileId').value = bc.videoFileId || '';
+          document.getElementById('bc-text').value = bc.text || '';
+          document.getElementById('bc-filterLang').value = bc.filterLang || '';
+          document.getElementById('bc-filterHasContacts').checked = !!bc.filterHasContacts;
+
+          // Очищуємо та заповнюємо інлайн кнопки
+          buttonsContainer.innerHTML = '';
+          if (bc.buttons && Array.isArray(bc.buttons)) {
+            bc.buttons.forEach(btnInfo => {
+              const row = document.createElement('div');
+              row.className = 'btn-row mt-5';
+              row.innerHTML = `
+                <input type="text" placeholder="Текст кнопки" required class="btn-text-input" value="${btnInfo.text}">
+                <input type="url" placeholder="Посилання URL" required class="btn-url-input" value="${btnInfo.url}">
+                <button type="button" class="remove-btn-row">&times;</button>
+              `;
+              buttonsContainer.appendChild(row);
+              row.querySelector('.remove-btn-row').addEventListener('click', () => {
+                row.remove();
+              });
+            });
+          }
+
+          // Теги
+          const tagCheckboxes = filterTagsList.querySelectorAll('input[type="checkbox"]');
+          tagCheckboxes.forEach(cb => {
+            cb.checked = Array.isArray(bc.filterTags) && bc.filterTags.includes(cb.value);
+          });
+
+          modal.classList.add('active');
+        });
+      });
+
+      // Реєструємо кліки на кнопки видалення
+      document.querySelectorAll('.delete-broadcast-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = e.target.dataset.id;
+          if (!confirm(`Ви дійсно бажаєте видалити розсилку #${id}?`)) return;
+
+          try {
+            const res = await fetch(`/api/admin/broadcasts/${id}`, {
+              method: 'DELETE'
+            });
+
+            if (!res.ok) {
+              const data = await res.json();
+              throw new Error(data.error || 'Не вдалося видалити розсилку');
+            }
+
+            showToast(`Розсилку #${id} видалено`);
+            loadBroadcasts();
+          } catch (err) {
+            console.error(err);
+            showToast(err.message, 'error');
           }
         });
       });
@@ -534,6 +614,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── МОДАЛЬНЕ ВІКНО СТВОРЕННЯ РОЗСИЛКИ ──────────────────────────────────────
   newBroadcastBtn.addEventListener('click', () => {
+    editingBroadcastId = null;
+    modalTitle.textContent = 'Створення нової розсилки';
+    modalSubmitBtn.textContent = '💾 Зберегти як чернетку';
     modal.classList.add('active');
     // Скидаємо поля
     broadcastForm.reset();
@@ -600,15 +683,23 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     try {
-      const res = await fetch('/api/admin/broadcasts', {
-        method: 'POST',
+      const url = editingBroadcastId 
+        ? `/api/admin/broadcasts/${editingBroadcastId}` 
+        : '/api/admin/broadcasts';
+      const method = editingBroadcastId ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
 
-      if (!res.ok) throw new Error('Не вдалося створити чернетку розсилки');
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Не вдалося зберегти зміни розсилки');
+      }
       
-      showToast('Чернетку розсилки створено успішно');
+      showToast(editingBroadcastId ? 'Зміни в розсилці збережено' : 'Чернетку розсилки створено успішно');
       closeModal();
       loadBroadcasts();
     } catch (err) {

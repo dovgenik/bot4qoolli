@@ -43,6 +43,15 @@ if (!SERVER_URL) {
   );
 }
 
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin';
+
+if (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD) {
+  console.warn(
+    '⚠️  ADMIN_USERNAME або ADMIN_PASSWORD не задано в env. Використовуються замовчувані значення (admin / admin).'
+  );
+}
+
 module.exports = {
   BOT_TOKEN:         process.env.BOT_TOKEN,
   SITE_URL:          process.env.SITE_URL,
@@ -54,4 +63,6 @@ module.exports = {
   SERVER_URL,
   NODE_ENV:          process.env.NODE_ENV || 'development',
   IS_PROD:           process.env.NODE_ENV === 'production',
-};
+  ADMIN_USERNAME,
+  ADMIN_PASSWORD,
+};

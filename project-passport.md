@@ -41,9 +41,15 @@ project/
 ├── src/
 │   ├── index.js                     — точка входу: запуск Express + bot.launch()
 │   ├── bot.js                       — ініціалізація Telegraf, реєстрація хендлерів, сцен, callbacks
-│   ├── server.js                    — Express: /r/:action (redirect-трекінг), /tz, /tz/save, /health
+│   ├── server.js                    — Express: /r/:action (redirect-трекінг), /tz, /tz/save, /health, /admin
 │   ├── config/
 │   │   └── config.js                — єдина точка конфігурації, валідація обов'язкових env-змінних
+│   ├── routes/
+│   │   └── adminRoutes.js           — REST API ендпоінти для адмін-панелі з Basic Auth
+│   ├── public/                      — статичні файли преміум веб-адмінки (SPA)
+│   │   ├── index.html               — структура інтерфейсу адмін-панелі
+│   │   ├── style.css                — стилізація інтерфейсу (темна тема, CSS variables)
+│   │   └── app.js                   — клієнтська логіка: оновлення DOM, запити до REST API
 │   ├── handlers/
 │   │   ├── startHandler.js          — /start: автовизначення мови, вітання
 │   │   ├── messageHandler.js        — Reply keyboard: обробка вибору мови
@@ -62,7 +68,7 @@ project/
 │   │   ├── userService.js           — CRUD юзерів: upsert, updateLanguage, saveContacts, saveTimezone, saveCrmSync + аналітика
 │   │   ├── eventService.js          — logEvent, ACTIONS-константи, аналітика конверсій
 │   │   ├── contentService.js        — BotContent + Config з in-memory кешем TTL 5 хв, fallback на locale-файли
-│   │   └── broadcastService.js      — getAudience за фільтрами, батч-розсилка з rate limiting
+│   │   └── broadcastService.js      — getAudience за фільтрами, батч-розсилка з rate limiting, cancelBroadcast
 │   ├── services/
 │   │   └── crmService.js            — createLead у Uspacy CRM (POST /crm/v1/entities/leads)
 │   └── utils/
@@ -127,9 +133,11 @@ project/
 
 ## 7. Задача поточного спринту
 
-
-
-
+- **Створення преміум веб-панелі адміністратора (SPA)**:
+  - Реалізовано інтерфейс для моніторингу аналітики (Chart.js, конверсії, події).
+  - Створено редактори для контенту бота (`BotContent` для UK/RU) та глобальних налаштувань (`Config`).
+  - Реалізовано планувальник та менеджер розсилок із фільтрами по мові, наявності контактів та тегам, а також можливість скасування розсилки в процесі надсилання.
+  - Доступ захищено за допомогою Basic Authentication (`ADMIN_USERNAME` та `ADMIN_PASSWORD`).
 ## 8. Угоди і обмеження
 
 - **BigInt** для `User.id` — Telegram ID перевищує 32-бітний ліміт

@@ -3,18 +3,54 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const express = require("express");
+const path = require("path");
 const { getConfig } = require("./db/contentService");
 const { logEvent, ACTIONS } = require("./db/eventService");
 const { saveTimezone, getUserById } = require("./db/userService");
-const { ADMIN_TELEGRAM_ID, BUSINESS_TIMEZONE } = require("./config/config");
+const { ADMIN_TELEGRAM_ID, BUSINESS_TIMEZONE, ADMIN_USERNAME, ADMIN_PASSWORD } = require("./config/config");
 const { formatTimezoneForDisplay } = require("./utils/timezone");
 const { updateLead } = require("./services/crmService");
 const pendingTimezones = require("./utils/pendingTimezones");
+const adminRouterSetup = require("./routes/adminRoutes");
 
 const uk = require("./locales/uk");
 const ru = require("./locales/ru");
 
 const app = express();
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Basic Authentication Middleware
+const basicAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Admin Panel"');
+    return res.status(401).send('Unauthorized');
+  }
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0].toLowerCase() !== 'basic') {
+    return res.status(401).send('Unauthorized');
+  }
+  const credentials = Buffer.from(parts[1], 'base64').toString().split(':');
+  if (credentials.length !== 2) {
+    return res.status(401).send('Unauthorized');
+  }
+  const [username, password] = credentials;
+  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    return next();
+  }
+  res.setHeader('WWW-Authenticate', 'Basic realm="Admin Panel"');
+  return res.status(401).send('Unauthorized');
+};
+
+// Перенаправлення з /admin на /admin/index.html
+app.get("/admin", (req, res) => {
+  res.redirect("/admin/index.html");
+});
+
+// Захист і роздача статичних файлів адмінки
+app.use("/admin", basicAuth, express.static(path.join(__dirname, "public")));
 
 // ── Dedup для redirect-кліків ─────────────────────────────────────────────────
 const recentClicks = new Map();
@@ -341,6 +377,9 @@ app.get("/health", (_req, res) => res.json({ status: "ok" }));
 // ─────────────────────────────────────────────────────────────────────────────
 const startServer = (bot) => {
   setupTzSave(bot); // реєструємо /tz/save з доступом до bot
+
+  // Монтуємо REST API адмінки
+  app.use("/api/admin", basicAuth, adminRouterSetup(bot));
 
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {

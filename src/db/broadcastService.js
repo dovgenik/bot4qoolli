@@ -140,6 +140,33 @@ const sendBroadcast = async (telegram, broadcastId, adminTelegramId) => {
 
   // ── Відправка батчами ───────────────────────────────────────────────────
   for (let i = 0; i < users.length; i += BATCH_SIZE) {
+    // Перевіряємо статус розсилки в БД на випадок скасування
+    const currentBroadcast = await prisma.broadcast.findUnique({
+      where: { id: broadcastId },
+      select: { status: true },
+    });
+
+    if (currentBroadcast && currentBroadcast.status === 'cancelled') {
+      console.log(`[broadcast #${broadcastId}] {status: 'cancelled'} - розсилку скасовано адміном.`);
+      await prisma.broadcast.update({
+        where: { id: broadcastId },
+        data: {
+          finishedAt: new Date(),
+          sentCount,
+          errorCount,
+        },
+      }).catch(() => {});
+
+      await telegram.sendMessage(
+        adminTelegramId,
+        `⚠️ Розсилка #${broadcastId} "${broadcast.title}" була скасована адміном\n\n` +
+        `📊 Оброблено: ${sentCount + errorCount} з ${totalCount}\n` +
+        `✉️ Відправлено: ${sentCount}\n` +
+        `❌ Помилок: ${errorCount}`
+      ).catch(() => {});
+      return;
+    }
+
     const batch = users.slice(i, i + BATCH_SIZE);
 
     // Відправляємо батч паралельно
@@ -223,4 +250,11 @@ const getBroadcastList = async () => {
   });
 };
 
-module.exports = { sendBroadcast, getBroadcastList, getAudience };
+const cancelBroadcast = async (broadcastId) => {
+  return prisma.broadcast.update({
+    where: { id: Number(broadcastId) },
+    data: { status: 'cancelled' },
+  });
+};
+
+module.exports = { sendBroadcast, getBroadcastList, getAudience, cancelBroadcast };

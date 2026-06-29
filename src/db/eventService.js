@@ -74,10 +74,10 @@ const getConversionRate = async () => {
 const getDailyActivity = async (days = 7) => {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   return prisma.$queryRaw`
-    SELECT DATE(created_at) AS day, COUNT(*)::int AS count
+    SELECT DATE("createdAt") AS day, COUNT(*)::int AS count
     FROM "Event"
-    WHERE created_at >= ${since}
-    GROUP BY DATE(created_at)
+    WHERE "createdAt" >= ${since}
+    GROUP BY DATE("createdAt")
     ORDER BY day DESC
   `;
 };

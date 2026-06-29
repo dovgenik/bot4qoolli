@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Qoolli Academy Bot Admin</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Style Link -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="logo">
+        <span class="logo-icon">🤖</span>
+        <div class="logo-text">
+          <h1>Qoolli Bot</h1>
+          <span>Адмін-панель</span>
+        </div>
+      </div>
+      <nav class="nav-menu">
+        <button class="nav-btn active" data-tab="dashboard">
+          <span class="btn-icon">📊</span> Панель керування
+        </button>
+        <button class="nav-btn" data-tab="content">
+          <span class="btn-icon">✍️</span> Редактор текстів
+        </button>
+        <button class="nav-btn" data-tab="settings">
+          <span class="btn-icon">⚙️</span> Налаштування бота
+        </button>
+        <button class="nav-btn" data-tab="broadcasts">
+          <span class="btn-icon">📢</span> Розсилки
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="admin-badge">
+          <span class="admin-dot"></span>
+          <span>Вхід виконано (admin)</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Top header -->
+      <header class="main-header">
+        <h2 id="tab-title">Панель керування</h2>
+        <div class="header-actions">
+          <button id="refresh-btn" class="icon-btn">🔄 Оновити дані</button>
+        </div>
+      </header>
+
+      <!-- Scrollable view area -->
+      <div class="view-area">
+        <!-- 1. Dashboard Tab -->
+        <section id="tab-dashboard" class="tab-view active">
+          <!-- Metrics Grid -->
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-info">
+                <h3>Всього користувачів</h3>
+                <p id="stat-total-users" class="metric-value">...</p>
+              </div>
+              <div class="metric-icon users-icon">👥</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-info">
+                <h3>Нові за 7 днів</h3>
+                <p id="stat-new-users" class="metric-value">...</p>
+              </div>
+              <div class="metric-icon new-icon">✨</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-info">
+                <h3>З контактами</h3>
+                <p id="stat-contacts" class="metric-value">...</p>
+              </div>
+              <div class="metric-icon contacts-icon">📱</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-info">
+                <h3>Синхронізовано з CRM</h3>
+                <p id="stat-crm" class="metric-value">...</p>
+              </div>
+              <div class="metric-icon crm-icon">🔄</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-info">
+                <h3>Визначено часовий пояс</h3>
+                <p id="stat-timezone" class="metric-value">...</p>
+              </div>
+              <div class="metric-icon tz-icon">🕐</div>
+            </div>
+          </div>
+
+          <!-- Charts and Funnel Grid -->
+          <div class="dashboard-grid">
+            <!-- Chart Card -->
+            <div class="card chart-card">
+              <h3>Активність (останні 7 днів)</h3>
+              <div class="chart-container">
+                <canvas id="activity-chart"></canvas>
+              </div>
+            </div>
+
+            <!-- Conversion Funnel & Language Distribution -->
+            <div class="dashboard-side-grid">
+              <div class="card conversion-card">
+                <h3>Конверсія воронки</h3>
+                <div class="funnel-container">
+                  <div class="funnel-step">
+                    <span class="step-name">🚀 Старт</span>
+                    <div class="step-bar-bg"><div id="funnel-start" class="step-bar" style="width: 100%"></div></div>
+                    <span id="funnel-start-val" class="step-value">...</span>
+                  </div>
+                  <div class="funnel-step">
+                    <span class="step-name">🌐 Вибір мови</span>
+                    <div class="step-bar-bg"><div id="funnel-lang" class="step-bar" style="width: 0%"></div></div>
+                    <span id="funnel-lang-val" class="step-value">...</span>
+                  </div>
+                  <div class="funnel-step">
+                    <span class="step-name">📞 Збережено контакти</span>
+                    <div class="step-bar-bg"><div id="funnel-contacts" class="step-bar" style="width: 0%"></div></div>
+                    <span id="funnel-contacts-val" class="step-value">...</span>
+                  </div>
+                  <div class="funnel-step">
+                    <span class="step-name">🔗 Кліки на лінки</span>
+                    <div class="step-bar-bg"><div id="funnel-clicks" class="step-bar" style="width: 0%"></div></div>
+                    <span id="funnel-clicks-val" class="step-value">...</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Language Split Card -->
+              <div class="card lang-card">
+                <h3>Розподіл за мовами</h3>
+                <div class="lang-bars" id="lang-distribution">
+                  <!-- Dynamic render -->
+                  <p class="placeholder-text">Завантаження...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Event Log -->
+          <div class="card event-log-card">
+            <div class="card-header">
+              <h3>Останні події бота</h3>
+              <div class="search-box">
+                <input type="text" id="event-search" placeholder="Пошук події чи користувача...">
+              </div>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Користувач</th>
+                    <th>Подія (Action)</th>
+                    <th>Деталі (Payload)</th>
+                    <th>Час</th>
+                  </tr>
+                </thead>
+                <tbody id="events-table-body">
+                  <tr>
+                    <td colspan="4" class="text-center">Завантаження подій...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. Content Editor Tab -->
+        <section id="tab-content" class="tab-view">
+          <form id="content-form">
+            <div class="tabs-subnav">
+              <button type="button" class="subnav-btn active" data-lang="uk">🇺🇦 Українська (UK)</button>
+              <button type="button" class="subnav-btn" data-lang="ru">🇷🇺 Російська (RU)</button>
+            </div>
+
+            <!-- UK Content Form Fields -->
+            <div id="form-lang-uk" class="lang-form-section active">
+              <div class="form-group">
+                <label for="uk-video_file_id">ID відеофайлу привітання (Telegram File ID)</label>
+                <input type="text" id="uk-video_file_id" name="uk[video_file_id]" placeholder="Введіть File ID відео...">
+              </div>
+              <div class="form-group">
+                <label for="uk-welcome_text">Текст привітання (після відео)</label>
+                <textarea id="uk-welcome_text" name="uk[welcome_text]" rows="5" placeholder="Привітальний текст..."></textarea>
+              </div>
+              <div class="form-group">
+                <label for="uk-menu_text">Текст головного меню</label>
+                <textarea id="uk-menu_text" name="uk[menu_text]" rows="4" placeholder="Текст меню..."></textarea>
+              </div>
+              <div class="form-group">
+                <label for="uk-gift_text">Текст повідомлення подарунка</label>
+                <textarea id="uk-gift_text" name="uk[gift_text]" rows="4" placeholder="Текст подарунка..."></textarea>
+              </div>
+              
+              <h3 class="section-subtitle">Тексти кнопок меню</h3>
+              <div class="buttons-grid">
+                <div class="form-group">
+                  <label for="uk-btn_register">Кнопка «Реєстрація»</label>
+                  <input type="text" id="uk-btn_register" name="uk[btn_register]">
+                </div>
+                <div class="form-group">
+                  <label for="uk-btn_contacts">Кнопка «Залишити контакти»</label>
+                  <input type="text" id="uk-btn_contacts" name="uk[btn_contacts]">
+                </div>
+                <div class="form-group">
+                  <label for="uk-btn_channel">Кнопка «Канал»</label>
+                  <input type="text" id="uk-btn_channel" name="uk[btn_channel]">
+                </div>
+                <div class="form-group">
+                  <label for="uk-btn_consult">Кнопка «Консультація»</label>
+                  <input type="text" id="uk-btn_consult" name="uk[btn_consult]">
+                </div>
+                <div class="form-group">
+                  <label for="uk-btn_gift">Кнопка «Отримати подарунок»</label>
+                  <input type="text" id="uk-btn_gift" name="uk[btn_gift]">
+                </div>
+              </div>
+            </div>
+
+            <!-- RU Content Form Fields -->
+            <div id="form-lang-ru" class="lang-form-section">
+              <div class="form-group">
+                <label for="ru-video_file_id">ID видеофайла приветствия (Telegram File ID)</label>
+                <input type="text" id="ru-video_file_id" name="ru[video_file_id]" placeholder="Введите File ID видео...">
+              </div>
+              <div class="form-group">
+                <label for="ru-welcome_text">Текст приветствия (после видео)</label>
+                <textarea id="ru-welcome_text" name="ru[welcome_text]" rows="5" placeholder="Приветственный текст..."></textarea>
+              </div>
+              <div class="form-group">
+                <label for="ru-menu_text">Текст главного меню</label>
+                <textarea id="ru-menu_text" name="ru[menu_text]" rows="4" placeholder="Текст меню..."></textarea>
+              </div>
+              <div class="form-group">
+                <label for="ru-gift_text">Текст сообщения подарка</label>
+                <textarea id="ru-gift_text" name="ru[gift_text]" rows="4" placeholder="Текст подарка..."></textarea>
+              </div>
+              
+              <h3 class="section-subtitle">Тексты кнопок меню</h3>
+              <div class="buttons-grid">
+                <div class="form-group">
+                  <label for="ru-btn_register">Кнопка «Регистрация»</label>
+                  <input type="text" id="ru-btn_register" name="ru[btn_register]">
+                </div>
+                <div class="form-group">
+                  <label for="ru-btn_contacts">Кнопка «Оставить контакты»</label>
+                  <input type="text" id="ru-btn_contacts" name="ru[btn_contacts]">
+                </div>
+                <div class="form-group">
+                  <label for="ru-btn_channel">Кнопка «Канал»</label>
+                  <input type="text" id="ru-btn_channel" name="ru[btn_channel]">
+                </div>
+                <div class="form-group">
+                  <label for="ru-btn_consult">Кнопка «Консультация»</label>
+                  <input type="text" id="ru-btn_consult" name="ru[btn_consult]">
+                </div>
+                <div class="form-group">
+                  <label for="ru-btn_gift">Кнопка «Получить подарок»</label>
+                  <input type="text" id="ru-btn_gift" name="ru[btn_gift]">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="primary-btn">💾 Зберегти зміни текстів</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- 3. Bot Settings Tab -->
+        <section id="tab-settings" class="tab-view">
+          <form id="config-form" class="card">
+            <h3>Глобальні налаштування бота</h3>
+            
+            <div class="form-group">
+              <label for="cfg-url_site">Посилання для кнопки «Реєстрація» (Сайт)</label>
+              <input type="url" id="cfg-url_site" name="url_site" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="cfg-url_channel">Посилання для кнопки «Канал»</label>
+              <input type="url" id="cfg-url_channel" name="url_channel" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="cfg-url_consult">Посилання для кнопки «Консультація»</label>
+              <input type="url" id="cfg-url_consult" name="url_consult" required>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-business_timezone">Часовий пояс замовника (для обчислення різниці)</label>
+              <input type="text" id="cfg-business_timezone" name="business_timezone" placeholder="Наприклад Europe/Amsterdam або Europe/Kyiv" required>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-ask_timezone">Запитувати часовий пояс у сценах контактів?</label>
+              <select id="cfg-ask_timezone" name="ask_timezone">
+                <option value="true">Так (Ask user for timezone)</option>
+                <option value="false">Ні (Skip timezone step)</option>
+              </select>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="primary-btn">💾 Зберегти налаштування</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- 4. Broadcasts Tab -->
+        <section id="tab-broadcasts" class="tab-view">
+          <div class="tab-header">
+            <h3>Всі масові розсилки</h3>
+            <button id="new-broadcast-btn" class="primary-btn">➕ Створити розсилку</button>
+          </div>
+
+          <div class="card table-card mt-20">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Назва (Title)</th>
+                    <th>Статус</th>
+                    <th>Надіслано (Прогрес)</th>
+                    <th>Помилки</th>
+                    <th>Дата створення</th>
+                    <th>Дії</th>
+                  </tr>
+                </thead>
+                <tbody id="broadcasts-table-body">
+                  <tr>
+                    <td colspan="7" class="text-center">Завантаження розсилок...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- New Broadcast Modal -->
+  <div id="broadcast-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Створення нової розсилки</h2>
+        <button id="close-modal-btn" class="close-btn">&times;</button>
+      </div>
+      <form id="broadcast-form" class="modal-body">
+        <div class="form-group">
+          <label for="bc-title">Назва розсилки (для адмінки)</label>
+          <input type="text" id="bc-title" name="title" required placeholder="Наприклад: Акція Липень або Нове відео">
+        </div>
+        
+        <div class="form-group">
+          <label for="bc-videoFileId">ID відеофайлу в Telegram (необов'язково)</label>
+          <input type="text" id="bc-videoFileId" name="videoFileId" placeholder="Telegram File ID...">
+        </div>
+
+        <div class="form-group">
+          <label for="bc-text">Текст повідомлення (підтримується Markdown)</label>
+          <textarea id="bc-text" name="text" rows="5" placeholder="Текст розсилки..."></textarea>
+        </div>
+
+        <!-- Dynamic inline buttons creator -->
+        <div class="form-group">
+          <label>Кнопки під повідомленням (необов'язково)</label>
+          <div id="modal-buttons-container" class="buttons-builder">
+            <!-- Dynamically populated button row entries -->
+          </div>
+          <button type="button" id="add-btn-row-btn" class="secondary-btn btn-sm mt-5">➕ Додати кнопку</button>
+        </div>
+
+        <!-- Audience Filters -->
+        <div class="filters-section">
+          <h3>Фільтри цільової аудиторії</h3>
+          
+          <div class="form-group-inline">
+            <label for="bc-filterLang">Мова інтерфейсу:</label>
+            <select id="bc-filterLang" name="filterLang">
+              <option value="">Всі користувачі</option>
+              <option value="uk">Лише Українська (UK)</option>
+              <option value="ru">Лише Російська (RU)</option>
+            </select>
+          </div>
+
+          <div class="form-group-checkbox">
+            <input type="checkbox" id="bc-filterHasContacts" name="filterHasContacts">
+            <label for="bc-filterHasContacts">Тільки користувачі з контактами (телефон)</label>
+          </div>
+
+          <div class="form-group mt-10">
+            <label>Тільки з тегами (виберіть один або більше):</label>
+            <div id="filter-tags-list" class="tags-checkbox-container">
+              <!-- Dynamically populated user tags list -->
+              <span class="placeholder-text">Немає доступних тегів</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="cancel-modal-btn" class="secondary-btn">Скасувати</button>
+          <button type="submit" class="primary-btn">💾 Зберегти як чернетку</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Повідомлення</div>
+
+  <!-- App Script Link -->
+  <script src="app.js"></script>
+</body>
+</html>
